@@ -20,12 +20,23 @@ infrastructure/                      # 基础设施
 ├── result-guide.md                  # 统一 Result 返回体
 ├── swagger-guide.md                 # Swagger/Knife4j 文档
 ├── config-guide.md                  # 配置管理
-└── logging-guide.md                 # 日志规范
+├── logging-guide.md                 # 日志规范
+└── redis-guide.md                   # Redis 开发规范
+
+auth/                               # 认证授权规范
+├── auth-overview.md                 # 总览索引（先读，需要询问用户需要什么类型的登录架构）
+├── auth-basic.md                    # 基础：单应用 + SaToken + RBAC
+├── auth-multi-end.md                # 多端隔离
+├── auth-multi-system.md             # 多系统隔离
+├── auth-sso.md                      # SSO 统一认证
+└── auth-oauth2.md                   # OAuth2 第三方登录
 
 quality/                             # 质量规范
 ├── code-style-guide.md              # 代码风格
+├── jsr303-guide.md                  # JSR 303 参数校验
 ├── i18n-guide.md                    # 国际化
-└── error-code-reference.md          # 错误码参考
+├── error-code-reference.md          # 错误码参考
+└── database-guide.md                # 数据库建表规范
 ```
 
 ---
@@ -46,7 +57,7 @@ quality/                             # 质量规范
 ```
 1. 先读 layered/controller-guide.md       → URL 设计、参数约束、返回体
 2. 再读 infrastructure/result-guide.md    → Result<T> 返回
-3. 再读 quality/i18n-guide.md             → JSR 303 分组校验
+3. 再读 quality/jsr303-guide.md           → JSR 303 分组校验、DTO 校验注解
 4. 需要加文档时读 infrastructure/swagger-guide.md
 ```
 
@@ -78,6 +89,27 @@ quality/                             # 质量规范
 读 infrastructure/logging-guide.md → 日志级别、Filter 统一拦截、禁止事项
 ```
 
+### 认证授权 / SaToken
+
+在写认证代码前，**必须先向用户确认**是否需要多端隔离、多系统、SSO、OAuth2：
+- 全部不需要 → 只读 `auth-basic.md`
+- 需要某些 → 读 `auth-basic.md` + 对应文件
+
+```
+1. 先读 auth/auth-overview.md       → 按复杂度选方案，向用户确认
+2. 基础场景读 auth/auth-basic.md    → 单应用 + RBAC
+3. 多端再读 auth/auth-multi-end.md  → 用户端/管理端隔离
+4. 多系统再读 auth/auth-multi-system.md → 系统隔离
+5. SSO 再读 auth/auth-sso.md        → 统一认证中心
+6. OAuth2 再读 auth/auth-oauth2.md  → 三方登录
+```
+
+### 建表 / 数据库设计
+
+```
+读 quality/database-guide.md → 审计字段、主键策略、逻辑删除、字符集
+```
+
 ### 微服务拆分 / 服务间调用
 
 ```
@@ -99,4 +131,4 @@ quality/                             # 质量规范
 - 异常：抛 `BusinessException`，不写自由文本
 - SQL：简单查 LambdaQueryWrapper，复杂/联表/子查询走 XML，禁用 `@Select`
 - 参数：>3 个收敛到 DTO
-- URL：RESTful 复数名词，CRUD 不用动词
+- URL：RESTful 复数名词，CRUD 不用动词（非 CRUD 业务动作如取消、重置允许动词）

@@ -111,26 +111,27 @@ public class UserServiceImpl implements UserService {
 }
 ```
 
-### 4.2 当前用户获取：使用 SaToken
+### 4.2 当前用户获取：使用 LoginContextHolder
 
-权限框架统一使用 SaToken，Service 层通过 `StpUtil` 获取当前用户信息：
+Service 层通过 `LoginContextHolder` 获取当前用户，不硬编码 `StpKit.USER`：
 
 ```java
-import cn.dev33.satoken.stp.StpUtil;
+import com.chenyi.{project}.context.LoginContextHolder;
 
 @Service
 public class UserServiceImpl implements UserService {
 
     @Override
     public void create(UserCreateDTO dto) {
-        Long currentUserId = StpUtil.getLoginIdAsLong();
-        // 定时任务/非 HTTP 场景不会被自动注入，由调用方决定是否跳过或手动设置
+        Long currentUserId = LoginContextHolder.getUserId();
         ...
     }
 }
 ```
 
-**注意：** 定时任务或消息队列等非 HTTP 场景中没有登录态，`StpUtil.getLoginId()` 会抛异常。这类场景应通过业务参数传入操作用户，不依赖 `StpUtil`。
+`LoginContextHolder` 在拦截器或网关中被设置为当前的 `StpLogic`，通用代码无需知道当前是哪个系统/哪个端。
+
+**注意：** 定时任务或消息队列等非 HTTP 场景中没有登录态，`LoginContextHolder.getUserId()` 返回 `null`。这类场景应通过业务参数传入操作用户，不依赖 `LoginContextHolder`。
 
 ### 4.3 国际化 Locale
 
@@ -172,4 +173,5 @@ Locale 由 Spring 从请求头 `Accept-Language` 自动解析（`LocaleContextHo
 | `../architecture/package-structure-guide.md` | Service 在包结构中的位置（`service/impl`） |
 | `controller-guide.md` | Controller 只调 Service，不调 Mapper |
 | `../infrastructure/result-guide.md` | Controller 调用 Service 后用 `Result<T>` 返回 |
+| `../auth/auth-basic.md` | `LoginContextHolder` 定义及拦截器配置 |
 | `../quality/error-code-reference.md` | Service 中抛 `BusinessException` 由 GlobalExceptionHandler 拦截 |

@@ -1,6 +1,8 @@
 # 统一 Result 返回体规范
 
 > 所有 Controller 和 HttpExchange 接口的返回值必须使用 `Result<T>`，禁止返回裸对象或字符串。
+> 
+> **包路径说明：** 微服务架构中 `Result<T>`、`PageQueryDTO`、`PageResult<T>` 放在 `com.chenyi.common.result` 包（`project-common` 模块）。单体项目应改为 `com.chenyi.{project}.common.result`。
 
 ---
 
@@ -92,12 +94,39 @@ public Result<Void> create(@Validated @RequestBody UserCreateDTO dto) {
 // 业务异常由 GlobalExceptionHandler 统一拦截，无需手动构建 Result.error()
 ```
 
-### 3.2 分页返回
+### 3.2 分页查询
+
+#### 分页请求基类
+
+所有分页查询的 DTO 必须继承 `PageQueryDTO`：
+
+```java
+package com.chenyi.common.result;
+
+import lombok.Data;
+
+@Data
+public class PageQueryDTO {
+    private int page = 1;
+    private int size = 10;
+}
+```
+
+```java
+// 使用示例：分页查询 DTO 继承 PageQueryDTO
+@Data
+public class UserPageQueryDTO extends PageQueryDTO {
+    private String username;
+    private Integer age;
+}
+```
+
+#### 分页响应
 
 ```java
 // 分页查询（复杂查询用 POST + @RequestBody）
 @PostMapping("/page")
-public Result<PageResult<UserVO>> page(@RequestBody UserPageQueryDTO dto) {
+public Result<PageResult<UserVO>> page(@RequestBody @Validated UserPageQueryDTO dto) {
     PageResult<UserVO> page = userService.page(dto);
     return Result.success(page);
 }

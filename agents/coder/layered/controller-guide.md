@@ -137,7 +137,7 @@ public Result<List<UserVO>> list(@Validated UserPageQueryDTO dto) { ... }
 
 每个接收 DTO 的方法必须加 `@Validated` 或 `@Valid` 注解，否则 DTO 内的校验注解（`@NotNull`、`@Size` 等）不生效。
 
-**完整校验规则（JSR 303 分组校验、国际化消息等）参考：`../quality/i18n-guide.md`**
+**完整校验规则（JSR 303 分组校验、国际化消息等）参考：`../quality/jsr303-guide.md`**
 
 ```java
 @PostMapping
@@ -196,7 +196,7 @@ public class UserController {
 
     private final UserService userService;
 
-    // 分页列表（POST，复杂查询条件用 RequestBody）
+    // 分页列表（UserPageQueryDTO 继承 PageQueryDTO，携带 page/size + 业务筛选字段）
     @Operation(summary = "分页查询用户")
     @PostMapping("/page")
     public Result<PageResult<UserVO>> page(@RequestBody @Validated UserPageQueryDTO dto) {
@@ -257,6 +257,7 @@ public class UserController {
 |------|---------|
 | `../architecture/package-structure-guide.md` | Controller 在包结构中的位置 |
 | `../infrastructure/result-guide.md` | 统一返回体 `Result<T>` |
-| `../quality/i18n-guide.md` | `@Validated` 分组校验 + 国际化 |
+| `../quality/jsr303-guide.md` | `@Validated` 分组校验 |
+| `../quality/i18n-guide.md` | 国际化消息配置 |
 | `../quality/error-code-reference.md` | GlobalExceptionHandler 统一异常拦截 |
 | `../infrastructure/swagger-guide.md` | `@Tag` / `@Operation` 接口文档规范 |

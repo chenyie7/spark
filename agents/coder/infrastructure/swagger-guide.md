@@ -99,8 +99,8 @@ knife4j:
 public class UserController {
 
     @Operation(summary = "分页查询用户")
-    @GetMapping
-    public Result<PageResult<UserVO>> page(@Validated UserPageQueryDTO dto) {
+    @PostMapping("/page")
+    public Result<PageResult<UserVO>> page(@RequestBody @Validated UserPageQueryDTO dto) {
         ...
     }
 
@@ -267,5 +267,5 @@ knife4j:
 | 文件 | 关联内容 |
 |------|---------|
 | `../layered/controller-guide.md` | `@Tag` / `@Operation` 使用位置 |
-| `../quality/i18n-guide.md` | DTO 字段 `@NotNull` 校验注解 |
+| `../quality/jsr303-guide.md` | DTO 字段 `@NotNull` 校验注解 |
 | `result-guide.md` | 统一返回体 `Result<T>` |

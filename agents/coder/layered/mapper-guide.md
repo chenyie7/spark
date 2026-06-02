@@ -19,7 +19,7 @@
 
 ```java
 // ✅ 常见单表查询
-List<User> users = lambdaQuery()
+List<UserEntity> users = lambdaQuery()
     .eq(UserEntity::getUsername, username)
     .ge(UserEntity::getAge, 18)
     .orderByDesc(UserEntity::getCreateTime)
@@ -94,9 +94,21 @@ public class UserEntity {
     private Long id;
 
     @TableField(fill = FieldFill.INSERT)         // 新增时自动填充
+    private Long createId;
+
+    @TableField(fill = FieldFill.INSERT)         // 新增时自动填充
+    private String createName;
+
+    @TableField(fill = FieldFill.INSERT)         // 新增时自动填充 + 数据库 DEFAULT CURRENT_TIMESTAMP 保底
     private LocalDateTime createTime;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)  // 新增和修改时自动填充
+    private Long updateId;
+
+    @TableField(fill = FieldFill.INSERT_UPDATE)  // 新增和修改时自动填充
+    private String updateName;
+
+    @TableField(fill = FieldFill.INSERT_UPDATE)  // 新增和修改时自动填充 + 数据库 ON UPDATE CURRENT_TIMESTAMP 保底
     private LocalDateTime updateTime;
 
     @TableLogic                                  // 逻辑删除
@@ -115,7 +127,11 @@ public class UserEntity {
 | 字段 | 类型 | 注解 |
 |------|------|------|
 | `id` | `Long` | `@TableId(type = IdType.ASSIGN_ID)` |
+| `createId` | `Long` | `@TableField(fill = FieldFill.INSERT)` |
+| `createName` | `String` | `@TableField(fill = FieldFill.INSERT)` |
 | `createTime` | `LocalDateTime` | `@TableField(fill = FieldFill.INSERT)` |
+| `updateId` | `Long` | `@TableField(fill = FieldFill.INSERT_UPDATE)` |
+| `updateName` | `String` | `@TableField(fill = FieldFill.INSERT_UPDATE)` |
 | `updateTime` | `LocalDateTime` | `@TableField(fill = FieldFill.INSERT_UPDATE)` |
 | `deleted` | `Integer` | `@TableLogic`（逻辑删除） |
 
@@ -123,9 +139,12 @@ public class UserEntity {
 
 ## 四、自动填充配置
 
+审计字段（`create_id`、`create_name`、`create_time`、`update_id`、`update_name`、`update_time`）通过 `MetaObjectHandler` 统一填充，不手动赋值。
+
 ```java
 package com.chenyi.{project}.config;
 
+import com.chenyi.{project}.context.LoginContextHolder;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.stereotype.Component;
@@ -136,22 +155,131 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 
     @Override
     public void insertFill(MetaObject metaObject) {
-        this.strictInsertFill(metaObject, "createTime", LocalDateTime.class, LocalDateTime.now());
-        this.strictInsertFill(metaObject, "updateTime", LocalDateTime.class, LocalDateTime.now());
+        Long userId = getCurrentUserId();
+        String userName = getCurrentUserName();
+        LocalDateTime now = LocalDateTime.now();
+
+        this.strictInsertFill(metaObject, "createId", Long.class, userId);
+        this.strictInsertFill(metaObject, "createName", String.class, userName);
+        this.strictInsertFill(metaObject, "createTime", LocalDateTime.class, now);
+        this.strictInsertFill(metaObject, "updateId", Long.class, userId);
+        this.strictInsertFill(metaObject, "updateName", String.class, userName);
+        this.strictInsertFill(metaObject, "updateTime", LocalDateTime.class, now);
     }
 
     @Override
     public void updateFill(MetaObject metaObject) {
+        this.strictUpdateFill(metaObject, "updateId", Long.class, getCurrentUserId());
+        this.strictUpdateFill(metaObject, "updateName", String.class, getCurrentUserName());
         this.strictUpdateFill(metaObject, "updateTime", LocalDateTime.class, LocalDateTime.now());
+    }
+
+    private Long getCurrentUserId() {
+        Long userId = LoginContextHolder.getUserId();
+        return userId != null ? userId : 0L;
+    }
+
+    private String getCurrentUserName() {
+        String userName = LoginContextHolder.getUserName();
+        return userName != null ? userName : "system";
     }
 }
 ```
 
+> `LoginContextHolder` 在拦截器/网关中被设置为当前的 `StpLogic`，MetaObjectHandler 不需要知道当前是哪个系统/哪个端。
+> 非 HTTP 场景中 `LoginContextHolder.getUserId()` 返回 null，兜底为 `0L` / `"system"`。
+
+**说明：**
+
+- `LoginContextHolder` 在拦截器/网关中被设置为当前的 `StpLogic`，通用组件不需要硬编码 `StpKit` 实例
+- 非 HTTP 场景中 `LoginContextHolder.getUserId()` 返回 null，兜底为 `0L` / `"system"`
+- 数据库 `DEFAULT CURRENT_TIMESTAMP` 作为二层保底，代码没设也不会空（见 `../quality/database-guide.md`）
+- `@TableField(fill = ...)` 注解只在字段不手动赋值时才生效，显式 set 过的字段不会覆盖
+
 ---
 
-## 五、分页配置
+## 五、枚举字段映射
 
-### 5.1 分页插件
+### 5.1 枚举定义
+
+状态、类型等有固定值范围的字段，使用 MyBatis-Plus 枚举映射替代 `Integer`/`String` 裸值。
+
+```java
+package com.chenyi.{project}.enums;
+
+import com.baomidou.mybatisplus.annotation.EnumValue;
+import lombok.Getter;
+
+@Getter
+public enum StatusEnum {
+    ENABLED(1, "启用"),
+    DISABLED(0, "禁用");
+
+    @EnumValue                          // 存入数据库的值
+    private final int code;
+    private final String desc;
+
+    StatusEnum(int code, String desc) {
+        this.code = code;
+        this.desc = desc;
+    }
+}
+```
+
+### 5.2 Entity 使用
+
+```java
+@Data
+@TableName("sys_user")
+public class UserEntity {
+
+    // 直接用枚举类型，不用 Integer
+    private StatusEnum status;
+}
+```
+
+### 5.3 配置启用
+
+```java
+@Configuration
+public class MybatisPlusConfig {
+
+    @Bean
+    public MybatisPlusInterceptor mybatisPlusInterceptor() {
+        MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        return interceptor;
+    }
+
+    @Bean
+    public ConfigurationCustomizer configurationCustomizer() {
+        return configuration -> configuration.setDefaultEnumTypeHandler(
+            MybatisEnumTypeHandler.class
+        );
+    }
+}
+```
+
+```yaml
+# application.yml
+mybatis-plus:
+  type-enums-package: com.chenyi.{project}.enums
+```
+
+### 5.4 LambdaQueryWrapper 中使用
+
+```java
+// ✅ 枚举类型安全，不会写错状态值
+lambdaQuery()
+    .eq(UserEntity::getStatus, StatusEnum.ENABLED)
+    .list();
+```
+
+---
+
+## 六、分页配置
+
+### 6.1 分页插件
 
 ```java
 package com.chenyi.{project}.config;
@@ -174,7 +302,7 @@ public class MybatisPlusConfig {
 }
 ```
 
-### 5.2 分页查询示例
+### 6.2 分页查询示例
 
 ```java
 // Mapper 接口
@@ -193,15 +321,15 @@ public PageResult<UserVO> page(UserPageQueryDTO dto) {
 
 ---
 
-## 六、Mapper 接口定义
+## 七、Mapper 接口定义
 
-### 6.1 接口定义
+### 7.1 接口定义
 
 ```java
 package com.chenyi.{project}.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.chenyi.{project}.entity.User;
+import com.chenyi.{project}.entity.UserEntity;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import java.util.List;
@@ -227,7 +355,7 @@ public interface UserMapper extends BaseMapper<UserEntity> {
 
 ---
 
-## 七、禁止事项
+## 八、禁止事项
 
 | 禁止 | 原因 |
 |------|------|
@@ -235,12 +363,12 @@ public interface UserMapper extends BaseMapper<UserEntity> {
 | 用 Lambda 写联表/子查询 | Lambda 无法处理 |
 | Mapper 方法参数不加 `@Param` | XML 中无法引用参数名 |
 | Mapper 直接返回 Entity 给 Controller | Entity 不穿透到 Controller 层，见 `service-guide.md` |
-| 字符串字段名构建条件：`new QueryWrapper<User>().eq("username", name)` | 字段名写死字符串，编译期不检查 |
+| 字符串字段名构建条件：`new QueryWrapper<UserEntity>().eq("username", name)` | 字段名写死字符串，编译期不检查 |
 | JPA 双向关联场景下滥用 `@Data` 自带的 `@ToString` / `@EqualsAndHashCode` | 可能导致循环引用 StackOverflow，如有需要手动 `@ToString.Exclude` 排除关联字段 |
 
 ---
 
-## 八、相关文件
+## 九、相关文件
 
 | 文件 | 关联内容 |
 |------|---------|

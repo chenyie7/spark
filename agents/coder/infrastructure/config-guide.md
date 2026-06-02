@@ -163,6 +163,8 @@ spring:
       config:
         server-addr: ${NACOS_SERVER:localhost:8848}
         namespace: ${spring.profiles.active}               # 按环境隔离：dev/test/prod
+                                                         # 注意：Nacos 命名空间默认 ID 是 UUID，
+                                                         # 需在 Nacos 控制台创建时手动设为环境名
         group: DEFAULT_GROUP
         shared-configs:                                     # 全局共享
           - data-id: common-datasource.yml

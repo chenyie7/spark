@@ -193,24 +193,73 @@ public List<UserVO> list() {
 
 ---
 
-## 五、常量 vs 枚举
+## 五、常量定义规范
+
+### 5.1 规则
+
+**跨文件出现 2 次及以上的字符串或数字 → 必须提取为常量**。即使目前只在 1 处使用，如果将来可能变（阈值、超时、前缀），也建议提取。
+
+### 5.2 字符串/数字 → 用什么
+
+| 场景 | 定义方式 | 示例 |
+|------|---------|------|
+| 有固定范围的状态、角色 | **枚举** | `RoleEnum.ADMIN`、`StatusEnum.ENABLED` |
+| Redis Key 前缀、Token 前缀 | **常量类** | `CacheConstants.USER_TOKEN` |
+| 正则表达式 | **常量类** | `RegexConstants.PHONE` |
+| 默认值、阈值、超时 | **常量类** | `DEFAULT_PAGE_SIZE`、`MAX_RETRY` |
+| 错误消息文本 | **BusinessErrorEnum** | 不走常量，走 `error-code-reference.md` |
+| 配置 key（`app.xxx`） | **`@ConfigurationProperties`** | 见 `../infrastructure/config-guide.md` |
+
+### 5.3 常量 vs 枚举的判断
 
 ```java
-// ❌ 禁止：字符串常量散落代码中
+// ❌ 禁止：硬编码字符串散落代码中
 if ("ADMIN".equals(user.getRole())) { ... }
 if ("SUPER_ADMIN".equals(user.getRole())) { ... }
 
-// ✅ 枚举
+// ✅ 有固定范围 → 枚举
 public enum RoleEnum {
     USER,
     ADMIN,
     SUPER_ADMIN
 }
 
-if (RoleEnum.ADMIN.equals(user.getRole())) { ... }
+// ❌ 禁止：Redis Key 前缀散落各处
+stringRedisTemplate.opsForValue().get("user:token:" + userId);
+
+// ✅ 跨文件复用 → 常量类
+stringRedisTemplate.opsForValue().get(CacheConstants.USER_TOKEN + userId);
 ```
 
-**有固定范围的状态字段必须使用枚举，禁止用字符串常量**。
+### 5.4 常量类规范
+
+```java
+// ✅ final 类 + 私有构造 + static 常量
+public final class CacheConstants {
+    private CacheConstants() {}
+
+    public static final String USER_TOKEN = "user:token:";
+    public static final String ORDER_LOCK = "order:lock:";
+    public static final String USER_CACHE = "userCache";
+}
+```
+
+| 规则 | 说明 |
+|------|------|
+| 类声明 | `public final class`，`private` 构造器 |
+| 字段 | `public static final` |
+| 命名 | `UPPER_SNAKE` |
+| 仅当前模块使用 | 放在该模块的 `constant/` 包下 |
+| 多模块共用 | 放在 `com.chenyi.common.constant/` 包下 |
+
+### 5.5 禁止
+
+| 禁止 | 原因 |
+|------|------|
+| 硬编码字符串散落各处 | 散落难维护，改一处漏一处 |
+| 有固定值的状态用字符串 `"admin"` | 应用枚举，有类型检查 |
+| 常量类不 `final`、构造器不 `private` | 防止实例化 |
+| 常量类互相继承 | 常量类之间无继承关系，各自独立 |
 
 ---
 

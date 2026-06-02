@@ -18,8 +18,8 @@ project/
 │       ├── MessageSourceConfig  # 国际化
 │       └── HttpExchangeConfig   # HTTP 客户端拦截器（透传语言、认证）
 │
-├── project-api/                 # API 契约层（jar，仅接口定义 + 降级）
-│   ├── api-user/               # UserClient 接口 + fallback
+├── project-api/                 # API 契约层（jar，接口 + DTO/VO + 降级）
+│   ├── api-user/               # UserClient + dto/ + vo/ + fallback
 │   ├── api-order/
 │   └── api-payment/
 │
@@ -116,12 +116,26 @@ public class UserClientFallback implements UserClient {
 }
 ```
 
-### 3.3 api 层只放接口定义
+### 3.3 api 层内容
 
-**禁止**在 api 模块中放业务逻辑。api 模块内容仅包含：
-- `{服务名}Client.java` — HTTP 接口声明
-- `fallback/` — 降级实现
-- **不**包含 DTO/VO — DTO/VO 属于业务模块内部
+api 模块包含三类内容：**接口定义 + 跨服务契约 DTO/VO + 降级实现**。
+
+```
+api-user/
+├── UserClient.java              # HttpExchange 接口
+├── fallback/
+│   └── UserClientFallback.java  # 降级实现
+├── dto/                          # 跨服务调用的入参（只放 UserClient 接口中用到的）
+│   └── UserCreateDTO.java       # 其他服务调 create 时传入
+└── vo/                           # 跨服务调用的出参（只放 UserClient 接口中用到的）
+    └── UserVO.java              # 其他服务调 getUser 时返回
+```
+
+**规则：**
+- dto 和 vo **必须是两个独立包**，不混放
+- api 模块只放出现在 `{服务名}Client` 接口**入参或返回值**中的 DTO/VO
+- 消费者引入 api 模块后直接使用其中的 DTO/VO，无需额外依赖
+- **禁止**在 api 模块中放业务逻辑
 
 ---
 
@@ -136,17 +150,30 @@ business-user/src/main/java/com/chenyi/user/
 │   └── impl/         # 服务层实现
 ├── mapper/           # 数据访问层
 ├── entity/           # 数据库实体
-├── dto/              # 请求入参（该服务私有）
-├── vo/               # 响应出参（该服务私有）
+├── dto/              # 服务内部接口的入参（不被其他服务调用的）
+├── vo/               # 服务内部接口的出参（不被其他服务调用的）
 ├── config/           # 该服务私有配置
 └── UserApplication.java
 ```
 
-**约束：**
+### 4.1 DTO/VO 放置规则
 
-- DTO/VO 放在业务模块内部，不放在 api 模块，不跨服务共用
-- 跨服务调用只通过 api 模块的接口，Consumer 不关心 Provider 内部 DTO 结构
-- Controller 的入参和出参使用该服务自己的 DTO/VO，与 api 模块接口的出参需做转换
+| 放在哪里 | 范围 | 判断标准 |
+|---------|------|---------|
+| **api 模块** `dto/` `vo/` | 跨服务调用的契约 DTO/VO | 出现在 `{服务名}Client` 接口的入参或返回值中 |
+| **business 模块** `dto/` `vo/` | 仅本服务内部使用的 DTO/VO | 不出现在 Client 接口中，仅本服务 Controller 使用 |
+
+**示例：**
+
+- `UserCreateDTO` 出现在 `UserClient.create()` 入参 → 放 api-user
+- `UserVO` 出现在 `UserClient.getUser()` 返回值 → 放 api-user
+- `UserDetailVO` 是内部聚合查询用的，不对外暴露 → 放 business-user
+- `UserInternalReportDTO` 是内部报表导出用的 → 放 business-user
+
+### 4.2 约束
+
+- Controller 根据接口类型引用不同来源的 DTO/VO：跨服务接口用 api 模块的，内部接口用 business 自己的
+- business 模块依赖自己的 api 模块：`business-user → api-user`
 
 ---
 

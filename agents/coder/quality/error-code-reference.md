@@ -96,7 +96,7 @@ public class GlobalExceptionHandler {
     public Result<Void> handleValidation(MethodArgumentNotValidException e) {
         FieldError fieldError = e.getBindingResult().getFieldError();
         String message = fieldError != null ? fieldError.getDefaultMessage() : "参数校验失败";
-        return Result.error(400, message);
+        return Result.error(400, message);  // 400 为 HTTP 状态码，JSR 303 校验统一用此码，不属于业务错误码号段
     }
 
     // 业务异常

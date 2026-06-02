@@ -88,9 +88,9 @@ Controller → Service（接口） → Service/impl（实现） → Mapper → D
 ### 4.4 Entity
 
 ```
-{表名转驼峰}.java
+{表名转驼峰}Entity.java
 
-示例：sys_user → User，order_item → OrderItem
+示例：sys_user → UserEntity，order_item → OrderItemEntity
 ```
 
 ### 4.5 DTO
