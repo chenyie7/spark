@@ -50,9 +50,9 @@ hooks/
 ### Task 1: 项目骨架
 
 **Files:**
-- Create: `scripts/code_check/__init__.py`
-- Create: `tests/test_code_check/__init__.py`
-- Create: `tests/test_code_check/conftest.py`
+- Create: `agents/reviewer/check_system/code_check/__init__.py`
+- Create: `agents/reviewer/check_system/tests/__init__.py`
+- Create: `agents/reviewer/check_system/tests/conftest.py`
 
 - [ ] **Step 1: 创建测试目录和基础文件**
 
@@ -62,7 +62,7 @@ mkdir -p scripts/code_check tests/test_code_check
 
 - [ ] **Step 2: 创建 package __init__.py**
 
-`scripts/code_check/__init__.py`:
+`agents/reviewer/check_system/code_check/__init__.py`:
 ```python
 """code-check: 双层代码校验系统 — 程序预检 + AI 检查清单."""
 
@@ -71,14 +71,14 @@ __version__ = "0.1.0"
 
 - [ ] **Step 3: 创建 tests __init__.py**
 
-`tests/test_code_check/__init__.py`:
+`agents/reviewer/check_system/tests/__init__.py`:
 ```python
 """Tests for code-check."""
 ```
 
 - [ ] **Step 4: 创建共享 fixtures**
 
-`tests/test_code_check/conftest.py`:
+`agents/reviewer/check_system/tests/conftest.py`:
 ```python
 """Shared fixtures for code-check tests."""
 
@@ -156,12 +156,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 2: 数据模型（models.py）
 
 **Files:**
-- Create: `scripts/code_check/models.py`
-- Create: `tests/test_code_check/test_models.py`
+- Create: `agents/reviewer/check_system/code_check/models.py`
+- Create: `agents/reviewer/check_system/tests/test_models.py`
 
 - [ ] **Step 1: 写数据模型测试**
 
-`tests/test_code_check/test_models.py`:
+`agents/reviewer/check_system/tests/test_models.py`:
 ```python
 """Tests for data models."""
 
@@ -347,7 +347,7 @@ Expected: ImportError（models 模块不存在）
 
 - [ ] **Step 3: 实现数据模型**
 
-`scripts/code_check/models.py`:
+`agents/reviewer/check_system/code_check/models.py`:
 ```python
 """Data models for code-check system."""
 
@@ -589,12 +589,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 3: 配置加载器（config.py）
 
 **Files:**
-- Create: `scripts/code_check/config.py`
-- Create: `tests/test_code_check/test_config.py`
+- Create: `agents/reviewer/check_system/code_check/config.py`
+- Create: `agents/reviewer/check_system/tests/test_config.py`
 
 - [ ] **Step 1: 写配置加载测试**
 
-`tests/test_code_check/test_config.py`:
+`agents/reviewer/check_system/tests/test_config.py`:
 ```python
 """Tests for config loader."""
 
@@ -682,7 +682,7 @@ python3 -c "import yaml; print(yaml.__version__)"
 
 - [ ] **Step 4: 实现配置加载器**
 
-`scripts/code_check/config.py`:
+`agents/reviewer/check_system/code_check/config.py`:
 ```python
 """Configuration loader — reads yaml configs for code-check."""
 
@@ -1083,8 +1083,8 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 5: 扫描引擎（scanner.py）
 
 **Files:**
-- Create: `scripts/code_check/scanner.py`
-- Create: `tests/test_code_check/test_scanner.py`
+- Create: `agents/reviewer/check_system/code_check/scanner.py`
+- Create: `agents/reviewer/check_system/tests/test_scanner.py`
 
 > 扫描引擎是一个规则执行引擎，读取 `program-checks.yaml` 中的每条规则，对每个 Java 文件执行匹配。
 > 支持四种扫描器：
@@ -1094,7 +1094,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写扫描引擎单元测试**
 
-`tests/test_code_check/test_scanner.py`:
+`agents/reviewer/check_system/tests/test_scanner.py`:
 ```python
 """Tests for Java file scanner engine."""
 
@@ -1509,7 +1509,7 @@ Expected: ImportError（scanner 模块不存在）
 
 - [ ] **Step 3: 实现扫描引擎**
 
-`scripts/code_check/scanner.py`:
+`agents/reviewer/check_system/code_check/scanner.py`:
 ```python
 """Java file scanner engine — reads rules from config and matches against code."""
 
@@ -2000,12 +2000,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 6: 报告生成器（reporter.py）
 
 **Files:**
-- Create: `scripts/code_check/reporter.py`
-- Create: `tests/test_code_check/test_reporter.py`
+- Create: `agents/reviewer/check_system/code_check/reporter.py`
+- Create: `agents/reviewer/check_system/tests/test_reporter.py`
 
 - [ ] **Step 1: 写报告生成器测试**
 
-`tests/test_code_check/test_reporter.py`:
+`agents/reviewer/check_system/tests/test_reporter.py`:
 ```python
 """Tests for report generator (JSON → Markdown)."""
 
@@ -2279,7 +2279,7 @@ Expected: ImportError（reporter 模块不存在）
 
 - [ ] **Step 3: 实现报告生成器**
 
-`scripts/code_check/reporter.py`:
+`agents/reviewer/check_system/code_check/reporter.py`:
 ```python
 """Report generator — converts ScanResult/ReviewResult JSON to Markdown."""
 
@@ -2636,11 +2636,11 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 7: CLI 入口（cli.py）
 
 **Files:**
-- Create: `scripts/code_check/cli.py`
+- Create: `agents/reviewer/check_system/code_check/cli.py`
 
 - [ ] **Step 1: 实现 CLI**
 
-`scripts/code_check/cli.py`:
+`agents/reviewer/check_system/code_check/cli.py`:
 ```python
 #!/usr/bin/env python3
 """code-check CLI — 双层代码校验系统入口."""
