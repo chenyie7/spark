@@ -1,6 +1,6 @@
 """Data models for code-check system."""
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
 from typing import Optional
@@ -41,7 +41,7 @@ class Finding:
         d = {"code": self.code, "level": self.level.value,
              "line": self.line, "message": self.message,
              "evidence": self.evidence}
-        if self.method:
+        if self.method is not None:
             d["method"] = self.method
         return d
 
