@@ -13,7 +13,7 @@
 ## 文件结构
 
 ```
-.code-check-config.yaml              # CLI 默认配置（项目根目录）
+code-check-config.yaml              # CLI 默认配置（项目根目录）
 check-rules/
 ├── program-checks.yaml              # 程序检查规则定义
 └── ai-checklist.yaml                # AI 检查清单定义
@@ -40,7 +40,7 @@ hooks/
 
 **模块职责：**
 - `models.py` — 所有数据结构定义（Finding, FileReport, ScanResult, ReviewItem, ReviewResult），无依赖
-- `config.py` — 读取 `.code-check-config.yaml`、`program-checks.yaml`、`ai-checklist.yaml`，依赖 models
+- `config.py` — 读取 `code-check-config.yaml`、`program-checks.yaml`、`ai-checklist.yaml`，依赖 models
 - `scanner.py` — 接收配置 + Java 文件列表 → 执行程序检查 → 输出 ScanResult，依赖 models + config
 - `reporter.py` — 接收 ScanResult + ReviewResult → 生成 Markdown，依赖 models
 - `cli.py` — 解析参数 → 调用 scanner/reporter → 统一出口，依赖所有模块
@@ -105,7 +105,7 @@ def tmp_project(tmp_path):
     project.mkdir()
 
     # Create config
-    config_file = project / ".code-check-config.yaml"
+    config_file = project / "code-check-config.yaml"
     config_file.write_text("""
 rules_dir: check-rules/
 strategy: strict
@@ -611,7 +611,7 @@ from scripts.code_check.models import BlockingStrategy
 
 class TestLoadCLIConfig:
     def test_load_from_yaml(self, tmp_project):
-        config = load_cli_config(config_path=tmp_project / ".code-check-config.yaml")
+        config = load_cli_config(config_path=tmp_project / "code-check-config.yaml")
         assert config["rules_dir"] == "check-rules/"
         assert config["strategy"] == BlockingStrategy.STRICT
         assert config["output_dir"] == "./review-output/"
@@ -729,14 +729,14 @@ def _read_yaml(path: Path) -> dict:
 # ── CLI Config ──────────────────────────────────────────────────
 
 def load_cli_config(config_path: Path | None = None) -> dict[str, Any]:
-    """Load CLI config from .code-check-config.yaml, falling back to defaults.
+    """Load CLI config from code-check-config.yaml, falling back to defaults.
 
     Returns a mutable dict that can be overridden by CLI args.
     """
     config = dict(DEFAULT_CLI_CONFIG)  # shallow copy of defaults
 
     if config_path is None:
-        config_path = Path(".code-check-config.yaml")
+        config_path = Path("code-check-config.yaml")
 
     file_data = _read_yaml(config_path)
     if not file_data:
@@ -828,13 +828,13 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 4: 配置文件（YAML 规则）
 
 **Files:**
-- Create: `.code-check-config.yaml`
+- Create: `code-check-config.yaml`
 - Create: `check-rules/program-checks.yaml`
 - Create: `check-rules/ai-checklist.yaml`
 
 - [ ] **Step 1: 创建 CLI 默认配置**
 
-`.code-check-config.yaml`:
+`code-check-config.yaml`:
 ```yaml
 # code-check 配置文件 —— 放在项目根目录
 
@@ -1072,7 +1072,7 @@ BE-QL-46:
 - [ ] **Step 4: 提交**
 
 ```bash
-git add .code-check-config.yaml check-rules/
+git add code-check-config.yaml check-rules/
 git commit -m "feat: add check rules config — program checks and AI checklist
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -2886,14 +2886,14 @@ def main():
                         help="Blocking strategy")
     p_scan.add_argument("--format", choices=["json", "md"], help="Output format")
     p_scan.add_argument("--output-dir", help="Output directory")
-    p_scan.add_argument("--config", help="Config file path (default: .code-check-config.yaml)")
+    p_scan.add_argument("--config", help="Config file path (default: code-check-config.yaml)")
 
     # report
     p_report = sub.add_parser("report", help="Generate final Markdown report")
     p_report.add_argument("--pre", required=True, help="Pre-check result JSON path")
     p_report.add_argument("--ai", help="AI check result JSON path (optional)")
     p_report.add_argument("--output", required=True, help="Output Markdown path")
-    p_report.add_argument("--config", help="Config file path (default: .code-check-config.yaml)")
+    p_report.add_argument("--config", help="Config file path (default: code-check-config.yaml)")
 
     args = parser.parse_args()
 
@@ -2951,7 +2951,7 @@ set -euo pipefail
 
 # 配置（从命令行参数或默认值获取）
 TARGET_PATH="${1:-src/main/java}"
-CONFIG_PATH="${2:-.code-check-config.yaml}"
+CONFIG_PATH="${2:-code-check-config.yaml}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -3001,7 +3001,7 @@ set -euo pipefail
 PRE_CHECK_JSON="${1:-./review-output/pre-check-result.json}"
 AI_CHECK_JSON="${2:-./review-output/review-result.json}"
 OUTPUT_MD="${3:-./review-output/final-review-report.md}"
-CONFIG_PATH="${4:-.code-check-config.yaml}"
+CONFIG_PATH="${4:-code-check-config.yaml}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -3090,7 +3090,7 @@ public class UserController {
 - [ ] **Step 3: 复制配置到测试目录**
 
 ```bash
-cp /Users/chenyi/ai-project/workflow-agent-demo/.code-check-config.yaml /tmp/code-check-demo/
+cp /Users/chenyi/ai-project/workflow-agent-demo/code-check-config.yaml /tmp/code-check-demo/
 cp -r /Users/chenyi/ai-project/workflow-agent-demo/check-rules /tmp/code-check-demo/
 ```
 

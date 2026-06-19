@@ -436,16 +436,16 @@ code-check scan <path> [options]
   --strategy      strict|normal|loose（默认: strict）
   --format        json|md（默认: json）
   --output        输出目录路径（默认: ./review-output/）
-  --config        配置文件路径（默认: .code-check-config.yaml）
+  --config        配置文件路径（默认: code-check-config.yaml）
 
 code-check report [options]
   --pre           程序预检 JSON 路径
   --ai            AI 检查 JSON 路径
   --output        输出 Markdown 路径
-  --config        配置文件路径（默认: .code-check-config.yaml）
+  --config        配置文件路径（默认: code-check-config.yaml）
 ```
 
-### CLI 配置文件（.code-check-config.yaml）
+### CLI 配置文件（code-check-config.yaml）
 
 放在项目根目录，命令行参数为空时自动读取默认值：
 
@@ -475,7 +475,7 @@ exclude:
 ```
 
 **工作方式：**
-1. CLI 启动先读 `.code-check-config.yaml`（如果存在）
+1. CLI 启动先读 `code-check-config.yaml`（如果存在）
 2. 用户传了命令行参数 → 覆盖配置文件的对应值
 3. 都没传 → 使用内置默认值
 4. Hook 调用时只需 `code-check scan <path>`，配置自动生效
@@ -486,7 +486,7 @@ exclude:
 
 | 文件 | 类型 | 说明 |
 |------|------|------|
-| `.code-check-config.yaml` | 配置 | CLI 默认配置文件，简化日常使用，避免重复传参 |
+| `code-check-config.yaml` | 配置 | CLI 默认配置文件，简化日常使用，避免重复传参 |
 | `check-rules/program-checks.yaml` | 配置 | 程序检查规则定义，从 reviewer 规范提取可机械化检查的项 |
 | `check-rules/ai-checklist.yaml` | 配置 | AI 检查清单模板，从 reviewer 规范提取需语义理解的项 |
 | `scripts/code_check/__init__.py` | Python | CLI 包入口 |
