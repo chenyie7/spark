@@ -8,6 +8,7 @@ Supports three scanner types:
 """
 
 import fnmatch
+import string as _string_
 import os
 import re
 from pathlib import Path
@@ -123,6 +124,16 @@ def _find_methods(content: str) -> list[dict]:
 # ── Base Scanner ───────────────────────────────────────────────
 
 from abc import ABC, abstractmethod
+
+
+def _safe_format(template: str, replacements: dict[str, str]) -> str:
+    """Format *template* with only the keys it actually references.
+
+    Unlike ``str.format(**kwargs)``, this accepts a dict so reserved words
+    like ``class`` can be used as template placeholders.
+    """
+    used = {f[1] for f in _string_.Formatter().parse(template) if f[1]}
+    return template.format(**{k: v for k, v in replacements.items() if k in used})
 
 
 class BaseScanner(ABC):
@@ -260,7 +271,7 @@ class JavaAnnotationScanner(BaseScanner):
                             code=code,
                             level=level,
                             line=0,
-                            message=msg_template.format(class_=class_name, method=""),
+                                                    message=_safe_format(msg_template, {"class": class_name, "class_": class_name, "method": ""}),
                             evidence=f"缺少 {needed} 注解",
                         )
                     )
@@ -306,8 +317,9 @@ class JavaAnnotationScanner(BaseScanner):
                             code=code,
                             level=level,
                             line=method["line_num"],
-                            message=msg_template.format(
-                                method=method["name"], class_=class_name
+                            message=_safe_format(
+                                msg_template,
+                                {"method": method["name"], "class": class_name, "class_": class_name},
                             ),
                             evidence=f"参数 {param['type']} {param['name']} 缺少 {missing_annotation}",
                             method=method["name"],
