@@ -62,7 +62,7 @@ def _any_match(annotations: list[str], pattern: str) -> bool:
 
 def _has_annotation(content: str, annotation_pattern: str) -> bool:
     """Return True if *annotation_pattern* is found anywhere in *content*."""
-    return bool(re.search(annotation_pattern, content))
+    return bool(re.search(rf"\b{annotation_pattern}\b", content))
 
 
 def _parse_params(params_str: str) -> list[dict]:
@@ -120,35 +120,12 @@ def _find_methods(content: str) -> list[dict]:
     return methods
 
 
-def _extract_param_text(content: str) -> str:
-    """Extract the full parameter-list text from Java source.
-
-    Handles multi-line declarations by maintaining parenthesis depth and
-    returning everything between the first ``(`` and its matching ``)``.
-    """
-    lines = content.split("\n")
-    result: list[str] = []
-    depth = 0
-    started = False
-    for line in lines:
-        for ch in line:
-            if ch == "(":
-                if not started:
-                    started = True
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-            if started:
-                result.append(ch)
-            if started and depth == 0:
-                return "".join(result)
-    return "".join(result)
-
-
 # ── Base Scanner ───────────────────────────────────────────────
 
+from abc import ABC, abstractmethod
 
-class BaseScanner:
+
+class BaseScanner(ABC):
     """Abstract base scanner.
 
     Subclasses must set *scanner_name* and implement *scan*.
@@ -156,6 +133,7 @@ class BaseScanner:
 
     scanner_name: str = ""
 
+    @abstractmethod
     def scan(self, file_path: Path, rules: dict) -> list[Finding]:
         """Run this scanner over *file_path* using the given *rules*.
 
@@ -166,7 +144,7 @@ class BaseScanner:
         Returns:
             List of Finding objects, possibly empty.
         """
-        raise NotImplementedError
+        ...
 
     @staticmethod
     def _rules_for_scanner(rules: dict, scanner_name: str) -> dict:
@@ -596,10 +574,21 @@ def scan_files(
     all_findings: list[Finding] = []
 
     for java_file in java_files:
-        content = java_file.read_text(encoding="utf-8")
-        all_hints.extend(_scan_for_hints(java_file, content))
-
-        findings = scan_single_file(java_file, rules)
+        try:
+            content = java_file.read_text(encoding="utf-8")
+            all_hints.extend(_scan_for_hints(java_file, content))
+            findings = scan_single_file(java_file, rules)
+        except (OSError, UnicodeDecodeError) as exc:
+            findings = [
+                Finding(
+                    code="IO_ERROR",
+                    level=Level.P0,
+                    line=0,
+                    method=None,
+                    message=f"Failed to read file: {exc}",
+                    evidence=str(java_file),
+                )
+            ]
         all_findings.extend(findings)
         file_reports.append(FileReport(file=str(java_file), findings=findings))
 
