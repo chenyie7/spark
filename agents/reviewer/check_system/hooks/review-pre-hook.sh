@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-TARGET_PATH="${1:-../../../../src/main/java}"
+TARGET_PATH="${1:-../../../src/main/java}"
 CONFIG_PATH="${2:-code-check-config.yaml}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

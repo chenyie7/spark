@@ -36,10 +36,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # 从项目根目录运行
-python3 -m agents.reviewer.check_system.code_check.cli scan <目标目录>
+cd agents/reviewer/check_system && python3 -m code_check.cli scan <目标目录>
 
 # 例如
-python3 -m agents.reviewer.check_system.code_check.cli scan src/main/java
+cd agents/reviewer/check_system && python3 -m code_check.cli scan ../../../src/main/java
 ```
 
 **行为：**
@@ -56,7 +56,7 @@ python3 -m agents.reviewer.check_system.code_check.cli scan src/main/java
 ### 生成最终报告
 
 ```bash
-python3 -m agents.reviewer.check_system.code_check.cli report \
+cd agents/reviewer/check_system && python3 -m code_check.cli report \
   --pre review-output/pre-check-result.json \
   --ai review-output/review-result.json \
   --output review-output/final-review-report.md

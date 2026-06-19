@@ -59,12 +59,17 @@ class TestParseReviewResult:
         assert loaded.summary.pass_ == 20
 
 
+import os
+
+CHECK_SYSTEM_DIR = str(Path(__file__).resolve().parent.parent)
+
+
 class TestCLIHelp:
     def test_scan_help(self):
         result = subprocess.run(
             [sys.executable, "-m", "code_check.cli", "scan", "--help"],
             capture_output=True, text=True,
-            cwd="/Users/chenyi/ai-project/workflow-agent-demo/agents/reviewer/check_system",
+            cwd=CHECK_SYSTEM_DIR,
         )
         assert result.returncode == 0, result.stderr
         assert "scan" in result.stdout
@@ -73,7 +78,7 @@ class TestCLIHelp:
         result = subprocess.run(
             [sys.executable, "-m", "code_check.cli", "report", "--help"],
             capture_output=True, text=True,
-            cwd="/Users/chenyi/ai-project/workflow-agent-demo/agents/reviewer/check_system",
+            cwd=CHECK_SYSTEM_DIR,
         )
         assert result.returncode == 0, result.stderr
         assert "report" in result.stdout

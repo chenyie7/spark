@@ -110,7 +110,7 @@ pip3 install pyyaml
 编辑 `agents/reviewer/check_system/code-check-config.yaml`：
 
 ```yaml
-rules_dir: agents/reviewer/check_system/rules/
+rules_dir: rules/
 strategy: strict          # strict | normal | loose
 output_dir: ./review-output/
 format: json
@@ -125,7 +125,7 @@ exclude:
 cd /path/to/workflow-agent-demo
 
 # 扫描 Java 代码
-python3 -m agents.reviewer.check_system.code_check.cli scan src/main/java
+cd agents/reviewer/check_system && python3 -m code_check.cli scan ../../../src/main/java
 
 # 查看报告
 cat review-output/pre-check-report.md
@@ -134,7 +134,7 @@ cat review-output/pre-check-report.md
 ### 4. 生成完整报告（含 AI 检查结果）
 
 ```bash
-python3 -m agents.reviewer.check_system.code_check.cli report \
+cd agents/reviewer/check_system && python3 -m code_check.cli report \
   --pre review-output/pre-check-result.json \
   --ai review-output/review-result.json \
   --output review-output/final-review-report.md
@@ -143,7 +143,7 @@ python3 -m agents.reviewer.check_system.code_check.cli report \
 ### 5. 运行测试
 
 ```bash
-python3 -m pytest agents/reviewer/check_system/tests/ -v
+cd agents/reviewer/check_system && python3 -m pytest tests/ -v
 ```
 
 ---
