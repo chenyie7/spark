@@ -67,19 +67,28 @@ def load_cli_config(config_path: Path | None = None) -> dict[str, Any]:
         if isinstance(strat, str):
             config["strategy"] = BlockingStrategy(strat)
 
-    # exclude: ensure list
+    # exclude: ensure list type
     if "exclude" in file_data:
-        config["exclude"] = file_data["exclude"]
+        raw = file_data["exclude"]
+        config["exclude"] = raw if isinstance(raw, list) else [raw]
 
     return config
 
 
 # ── Rule Loaders ────────────────────────────────────────────────
 
-def load_program_checks(rules_dir: Path | None = None) -> dict:
-    """Load program check rules from program-checks.yaml.
+def _load_rule_file(filename: str, rules_dir: Path | None = None) -> dict:
+    """Load a single rule file from the rules directory.
 
-    Returns dict keyed by check code (e.g. 'BE-QL-29').
+    Args:
+        filename: Name of the yaml file (e.g. 'program-checks.yaml').
+        rules_dir: Path to the check-rules directory.
+
+    Returns:
+        Dict keyed by check code, or empty dict if file not found.
+
+    Raises:
+        ConfigLoadError: If the rules directory does not exist.
     """
     if rules_dir is None:
         rules_dir = Path("check-rules")
@@ -88,14 +97,19 @@ def load_program_checks(rules_dir: Path | None = None) -> dict:
     if not rules_dir.exists():
         raise ConfigLoadError(f"Rules directory not found: {rules_dir}")
 
-    file_path = rules_dir / "program-checks.yaml"
+    file_path = rules_dir / filename
     if not file_path.exists():
         return {}
 
-    data = _read_yaml(file_path)
-    if data is None:
-        return {}
-    return data
+    return _read_yaml(file_path)
+
+
+def load_program_checks(rules_dir: Path | None = None) -> dict:
+    """Load program check rules from program-checks.yaml.
+
+    Returns dict keyed by check code (e.g. 'BE-QL-29').
+    """
+    return _load_rule_file("program-checks.yaml", rules_dir)
 
 
 def load_ai_checklist(rules_dir: Path | None = None) -> dict:
@@ -103,18 +117,4 @@ def load_ai_checklist(rules_dir: Path | None = None) -> dict:
 
     Returns dict keyed by check code (e.g. 'BE-QL-11').
     """
-    if rules_dir is None:
-        rules_dir = Path("check-rules")
-
-    rules_dir = Path(rules_dir)
-    if not rules_dir.exists():
-        raise ConfigLoadError(f"Rules directory not found: {rules_dir}")
-
-    file_path = rules_dir / "ai-checklist.yaml"
-    if not file_path.exists():
-        return {}
-
-    data = _read_yaml(file_path)
-    if data is None:
-        return {}
-    return data
+    return _load_rule_file("ai-checklist.yaml", rules_dir)
