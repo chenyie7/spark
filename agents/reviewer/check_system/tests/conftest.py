@@ -7,7 +7,7 @@ import pytest
 def sample_config_dict():
     """A valid CLI config dict for testing."""
     return {
-        "rules_dir": "check-rules/",
+        "rules_dir": "rules/",
         "strategy": "strict",
         "output_dir": "./review-output/",
         "format": "json",
@@ -24,7 +24,7 @@ def tmp_project(tmp_path):
     # Create config
     config_file = project / "code-check-config.yaml"
     config_file.write_text("""
-rules_dir: check-rules/
+rules_dir: rules/
 strategy: strict
 output_dir: ./review-output/
 format: json
@@ -33,7 +33,7 @@ exclude:
 """)
 
     # Create rules dir
-    rules_dir = project / "check-rules"
+    rules_dir = project / "rules"
     rules_dir.mkdir()
     (rules_dir / "program-checks.yaml").write_text("""
 BE-QL-29:

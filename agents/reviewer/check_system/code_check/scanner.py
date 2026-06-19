@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from agents.reviewer.check_system.code_check.models import (
+from code_check.models import (
     BlockingStrategy,
     Finding,
     FileReport,

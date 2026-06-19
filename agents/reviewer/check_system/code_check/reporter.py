@@ -5,7 +5,7 @@ pre-check-only report or a full final report.
 """
 
 from pathlib import Path
-from agents.reviewer.check_system.code_check.models import (
+from code_check.models import (
     Finding,
     ScanResult,
     ReviewResult,

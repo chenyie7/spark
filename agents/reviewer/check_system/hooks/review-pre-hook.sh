@@ -5,13 +5,13 @@
 
 set -euo pipefail
 
-TARGET_PATH="${1:-src/main/java}"
-CONFIG_PATH="${2:-agents/reviewer/check_system/code-check-config.yaml}"
+TARGET_PATH="${1:-../../../../src/main/java}"
+CONFIG_PATH="${2:-code-check-config.yaml}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/../../../../" && pwd)"
+CHECK_SYSTEM_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-cd "$PROJECT_DIR"
+cd "$CHECK_SYSTEM_DIR"
 
 echo "============================================"
 echo " Pre-hook: 程序预检"
@@ -19,7 +19,7 @@ echo " Target: $TARGET_PATH"
 echo " Config: $CONFIG_PATH"
 echo "============================================"
 
-python3 -m agents.reviewer.check_system.code_check.cli scan "$TARGET_PATH" --config "$CONFIG_PATH"
+python3 -m code_check.cli scan "$TARGET_PATH" --config "$CONFIG_PATH"
 
 EXIT_CODE=$?
 

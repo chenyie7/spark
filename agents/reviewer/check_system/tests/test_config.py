@@ -2,19 +2,19 @@
 
 import pytest
 from pathlib import Path
-from agents.reviewer.check_system.code_check.config import (
+from code_check.config import (
     load_cli_config,
     load_program_checks,
     load_ai_checklist,
     ConfigLoadError,
 )
-from agents.reviewer.check_system.code_check.models import BlockingStrategy
+from code_check.models import BlockingStrategy
 
 
 class TestLoadCLIConfig:
     def test_load_from_yaml(self, tmp_project):
         config = load_cli_config(config_path=tmp_project / "code-check-config.yaml")
-        assert config["rules_dir"] == "check-rules/"
+        assert config["rules_dir"] == "rules/"
         assert config["strategy"] == BlockingStrategy.STRICT
         assert config["output_dir"] == "./review-output/"
         assert config["format"] == "json"
@@ -22,7 +22,7 @@ class TestLoadCLIConfig:
 
     def test_defaults_when_no_file(self, tmp_path):
         config = load_cli_config(config_path=tmp_path / "nonexistent.yaml")
-        assert config["rules_dir"] == "agents/reviewer/check_system/rules/"
+        assert config["rules_dir"] == "rules/"
         assert config["strategy"] == BlockingStrategy.STRICT
         assert config["output_dir"] == "./review-output/"
         assert config["format"] == "json"
@@ -37,7 +37,7 @@ class TestLoadCLIConfig:
 
 class TestLoadProgramChecks:
     def test_load_rules(self, tmp_project):
-        rules = load_program_checks(rules_dir=tmp_project / "check-rules")
+        rules = load_program_checks(rules_dir=tmp_project / "rules")
         assert "BE-QL-29" in rules
         rule = rules["BE-QL-29"]
         assert rule["description"] == "Controller DTO 参数缺少 @Validated"
@@ -58,7 +58,7 @@ class TestLoadProgramChecks:
 
 class TestLoadAIChecklist:
     def test_load_rules(self, tmp_project):
-        rules = load_ai_checklist(rules_dir=tmp_project / "check-rules")
+        rules = load_ai_checklist(rules_dir=tmp_project / "rules")
         assert "BE-QL-11" in rules
         rule = rules["BE-QL-11"]
         assert rule["description"] == "log.info 是否包含关键业务信息"

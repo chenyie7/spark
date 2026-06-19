@@ -1,7 +1,7 @@
 """Tests for report generator (JSON to Markdown)."""
 
 from pathlib import Path
-from agents.reviewer.check_system.code_check.reporter import (
+from code_check.reporter import (
     generate_precheck_report,
     generate_final_report,
     level_icon,
@@ -13,7 +13,7 @@ from agents.reviewer.check_system.code_check.reporter import (
     build_summary_section,
     build_conclusion_section,
 )
-from agents.reviewer.check_system.code_check.models import (
+from code_check.models import (
     Finding,
     FileReport,
     ScanScope,

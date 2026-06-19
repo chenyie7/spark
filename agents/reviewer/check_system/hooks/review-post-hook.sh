@@ -8,12 +8,12 @@ set -euo pipefail
 PRE_CHECK_JSON="${1:-./review-output/pre-check-result.json}"
 AI_CHECK_JSON="${2:-./review-output/review-result.json}"
 OUTPUT_MD="${3:-./review-output/final-review-report.md}"
-CONFIG_PATH="${4:-agents/reviewer/check_system/code-check-config.yaml}"
+CONFIG_PATH="${4:-code-check-config.yaml}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/../../../../" && pwd)"
+CHECK_SYSTEM_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-cd "$PROJECT_DIR"
+cd "$CHECK_SYSTEM_DIR"
 
 echo "============================================"
 echo " Post-hook: 报告合并生成"
@@ -27,7 +27,7 @@ if [ ! -f "$PRE_CHECK_JSON" ]; then
     exit 1
 fi
 
-CMD="python3 -m agents.reviewer.check_system.code_check.cli report --pre $PRE_CHECK_JSON --output $OUTPUT_MD --config $CONFIG_PATH"
+CMD="python3 -m code_check.cli report --pre $PRE_CHECK_JSON --output $OUTPUT_MD --config $CONFIG_PATH"
 
 if [ -f "$AI_CHECK_JSON" ]; then
     CMD="$CMD --ai $AI_CHECK_JSON"

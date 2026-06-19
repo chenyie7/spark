@@ -6,10 +6,10 @@ import json
 import sys
 from pathlib import Path
 
-from agents.reviewer.check_system.code_check.config import load_cli_config, load_program_checks, ConfigLoadError
-from agents.reviewer.check_system.code_check.scanner import scan_files
-from agents.reviewer.check_system.code_check.reporter import generate_precheck_report, generate_final_report
-from agents.reviewer.check_system.code_check.models import (
+from code_check.config import load_cli_config, load_program_checks, ConfigLoadError
+from code_check.scanner import scan_files
+from code_check.reporter import generate_precheck_report, generate_final_report
+from code_check.models import (
     ScanResult, ReviewResult, Finding, FileReport, ScanScope, ScanMetadata, ScanSummary,
     ReviewItem, ReviewMetadata, ReviewSummary, HintForAI,
     Level, Result, BlockingStrategy,

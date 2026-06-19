@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from agents.reviewer.check_system.code_check.scanner import (
+from code_check.scanner import (
     scan_files,
     scan_single_file,
     TextGrepScanner,
@@ -12,7 +12,7 @@ from agents.reviewer.check_system.code_check.scanner import (
     should_exclude,
     is_blocked,
 )
-from agents.reviewer.check_system.code_check.models import Level, BlockingStrategy, Finding, ScanResult
+from code_check.models import Level, BlockingStrategy, Finding, ScanResult
 
 
 # ── Test Data ───────────────────────────────────────────────────

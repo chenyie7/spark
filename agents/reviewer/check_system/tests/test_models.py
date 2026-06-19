@@ -1,6 +1,6 @@
 """Tests for data models."""
 
-from agents.reviewer.check_system.code_check.models import (
+from code_check.models import (
     Finding,
     FileReport,
     ScanScope,

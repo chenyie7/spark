@@ -4,11 +4,11 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from agents.reviewer.check_system.code_check.cli import (
+from code_check.cli import (
     load_scan_result, load_review_result,
     _parse_scan_result, _parse_review_result,
 )
-from agents.reviewer.check_system.code_check.models import (
+from code_check.models import (
     ScanResult, ScanScope, ScanMetadata, ScanSummary, Finding, FileReport,
     ReviewResult, ReviewMetadata, ReviewSummary, ReviewItem, HintForAI,
     Level, Result, BlockingStrategy,
@@ -62,18 +62,18 @@ class TestParseReviewResult:
 class TestCLIHelp:
     def test_scan_help(self):
         result = subprocess.run(
-            [sys.executable, "-m", "agents.reviewer.check_system.code_check.cli", "scan", "--help"],
+            [sys.executable, "-m", "code_check.cli", "scan", "--help"],
             capture_output=True, text=True,
-            cwd="/Users/chenyi/ai-project/workflow-agent-demo",
+            cwd="/Users/chenyi/ai-project/workflow-agent-demo/agents/reviewer/check_system",
         )
         assert result.returncode == 0, result.stderr
         assert "scan" in result.stdout
 
     def test_report_help(self):
         result = subprocess.run(
-            [sys.executable, "-m", "agents.reviewer.check_system.code_check.cli", "report", "--help"],
+            [sys.executable, "-m", "code_check.cli", "report", "--help"],
             capture_output=True, text=True,
-            cwd="/Users/chenyi/ai-project/workflow-agent-demo",
+            cwd="/Users/chenyi/ai-project/workflow-agent-demo/agents/reviewer/check_system",
         )
         assert result.returncode == 0, result.stderr
         assert "report" in result.stdout

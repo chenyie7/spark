@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Any
-from agents.reviewer.check_system.code_check.models import BlockingStrategy
+from code_check.models import BlockingStrategy
 
 # PyYAML is the only external dependency. Fall back gracefully if missing.
 try:
@@ -19,7 +19,7 @@ class ConfigLoadError(Exception):
 # ── default config ──────────────────────────────────────────────
 
 DEFAULT_CLI_CONFIG: dict[str, Any] = {
-    "rules_dir": "agents/reviewer/check_system/rules/",
+    "rules_dir": "rules/",
     "strategy": BlockingStrategy.STRICT,
     "output_dir": "./review-output/",
     "format": "json",
@@ -82,7 +82,7 @@ def _load_rule_file(filename: str, rules_dir: Path | None = None) -> dict:
 
     Args:
         filename: Name of the yaml file (e.g. 'program-checks.yaml').
-        rules_dir: Path to the check-rules directory.
+        rules_dir: Path to the rules directory.
 
     Returns:
         Dict keyed by check code, or empty dict if file not found.
@@ -91,7 +91,7 @@ def _load_rule_file(filename: str, rules_dir: Path | None = None) -> dict:
         ConfigLoadError: If the rules directory does not exist.
     """
     if rules_dir is None:
-        rules_dir = Path("agents/reviewer/check_system/rules")
+        rules_dir = Path("rules")
 
     rules_dir = Path(rules_dir)
     if not rules_dir.exists():

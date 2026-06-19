@@ -1,7 +1,7 @@
 # code-check 配置文件 —— 放在项目根目录
 
 # 检查规则目录
-rules_dir: agents/reviewer/check_system/rules/
+rules_dir: rules/
 
 # 阻断策略：strict | normal | loose
 strategy: strict
