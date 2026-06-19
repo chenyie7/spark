@@ -1,0 +1,57 @@
+<h2>PRD 模板：PM Agent 最终交付物长什么样？</h2>
+<p class="subtitle">PRD 的结构决定了 Agent 在对话阶段要收集哪些信息</p>
+
+<div class="section">
+  <h3>候选模板</h3>
+  <div class="options">
+    <div class="option" data-choice="lean" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>精简版（适合快速迭代）</h3>
+        <div class="mockup" style="margin-top:8px;">
+          <div class="mockup-body" style="padding:12px;font-size:13px;">
+            <strong>1. 背景与目标</strong>（1-2段）<br>
+            <strong>2. 用户故事</strong>（As a... I want... So that...）<br>
+            <strong>3. 验收标准</strong>（Given/When/Then 列表）<br>
+            <strong>4. 非功能需求</strong>（性能/安全/兼容）<br>
+            <strong>5. 范围边界</strong>（做什么/不做什么）
+          </div>
+        </div>
+        <p style="margin-top:8px;">5 个模块，1-2 页，适合中小需求</p>
+      </div>
+    </div>
+    <div class="option" data-choice="full" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>完整版（适合正式项目）</h3>
+        <div class="mockup" style="margin-top:8px;">
+          <div class="mockup-body" style="padding:12px;font-size:13px;">
+            <strong>1. 需求概述</strong>：背景、目标、范围<br>
+            <strong>2. 用户分析</strong>：角色、场景、使用流程<br>
+            <strong>3. 功能需求</strong>：功能列表 + 优先级 + 用户故事<br>
+            <strong>4. 非功能需求</strong>：性能、安全、可用性、兼容性<br>
+            <strong>5. 业务流程</strong>：核心流程图/状态机<br>
+            <strong>6. 验收标准</strong>：每个功能的 Given/When/Then<br>
+            <strong>7. 依赖与风险</strong>：外部依赖、技术风险<br>
+            <strong>8. 附录</strong>：术语表、参考资料
+          </div>
+        </div>
+        <p style="margin-top:8px;">8 个模块，适合复杂需求、跨团队协作</p>
+      </div>
+    </div>
+    <div class="option" data-choice="modular" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>模块化（按需加载，推荐）</h3>
+        <p>核心模块必填，扩展模块按需求复杂度自动判断是否需要。Agent 在对话阶段根据需求类型智能选择</p>
+        <div class="mockup" style="margin-top:8px;">
+          <div class="mockup-body" style="padding:12px;font-size:13px;">
+            <strong>🔴 必填模块：</strong>需求概述、用户故事、验收标准<br>
+            <strong>🟡 条件模块：</strong>有权限需求 → 权限模型；有支付 → 支付流程；有状态变更 → 状态机<br>
+            <strong>🟢 可选模块：</strong>竞品分析、数据埋点、A/B 方案
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

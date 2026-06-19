@@ -1,0 +1,119 @@
+<h2>一个文件 vs 每个 Feature 一个文件</h2>
+<p class="subtitle">用你的方式更模块化，每个 Feature 可以独立开发、独立回填</p>
+
+<div class="section">
+  <h3>❌ 原来的设计：一个大文件</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:12px;font-size:11px;font-family:monospace;">
+feature-map.md（单文件，越来越长）<br>
+├── Mermaid DAG（全量）<br>
+├── F1 完整上下文<br>
+├── F2 完整上下文<br>
+├── F3 完整上下文<br>
+├── ...<br>
+└── F10 完整上下文<br>
+<br>
+<span style="color:#e65100;">问题：多人并行开发时，Coder 回填同时改同一个文件，冲突频繁。</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>✅ 你的方案：每个 Feature 独立文件</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:12px;font-size:11px;font-family:monospace;">
+feature-map/<br>
+├── <strong>README.md</strong>              ← 全局 Mermaid DAG + 拓扑排序 + 文件索引<br>
+├── <strong>F1-用户注册.md</strong>          ← 单 Feature 完整上下文<br>
+├── <strong>F2-邮箱验证.md</strong>          ← 含 upstream_context 引用<br>
+├── <strong>F3-用户登录.md</strong><br>
+├── <strong>F4-密码重置.md</strong><br>
+├── <strong>F5-会话管理.md</strong><br>
+├── <strong>F6-登录保护.md</strong><br>
+├── <strong>F7-商品浏览.md</strong><br>
+├── <strong>F8-加入购物车.md</strong><br>
+├── <strong>F9-下单结算.md</strong><br>
+└── <strong>F10-商品收藏.md</strong>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>每个 Feature 文件的内容</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;">
+<span style="color:#888;"># F8: 加入购物车</span>
+<br>
+<span style="color:#888;">**Issue:**</span> #8 &nbsp; <span style="color:#888;">**Priority:**</span> P1<br>
+<span style="color:#888;">**关联：**</span> [全局 Feature Map](./README.md) | [PRD](../PRD.md)<br>
+<br>
+<span style="color:#888;">## 依赖关系（本节点局部视图）</span><br>
+```mermaid
+graph TD
+  F7[F7: 商品浏览] --> F8[F8: 加入购物车]
+  F8 --> F9[F9: 下单结算]
+```
+<br>
+<span style="color:#888;">**Depends On:**</span> [F7-商品浏览](./F7-商品浏览.md)<br>
+<span style="color:#888;">**Blocks:**</span> [F9-下单结算](./F9-下单结算.md)<br>
+<br>
+<span style="color:#888;">## Business Layer</span><br>
+...（完整业务描述）<br>
+<br>
+<span style="color:#888;">## Design Layer</span><br>
+...（API、表、复用组件）<br>
+<br>
+<span style="color:#888;">## Upstream Context</span><br>
+<span style="color:#888;">| 来源 | 文件 | 可引用内容 |</span><br>
+<span style="color:#888;">| F3 | [F3-用户登录](./F3-用户登录.md) | LoginVO, StpKit.getLoginId() |</span><br>
+<span style="color:#888;">| F7 | [F7-商品浏览](./F7-商品浏览.md) | Product, Sku, ProductService.getById() |</span><br>
+<br>
+<span style="color:#888;">## Implementation Layer</span><br>
+<span style="color:#888;">> 开发完成后回填</span><br>
+<span style="color:#888;">- Changed Files: CartController.java, CartService.java, Cart.java</span><br>
+<span style="color:#888;">- Exported APIs: CartService.addItem(), CartService.getCart()</span><br>
+<span style="color:#888;">- Exported Models: Cart, CartItem</span><br>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>全局 README.md 作为总索引</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;">
+<span style="color:#888;"># Feature Map: 电商系统</span><br>
+<span style="color:#888;">> 关联 PRD: [PRD.md](../PRD.md)</span><br>
+<br>
+<span style="color:#888;">## 完整依赖关系图</span><br>
+```mermaid
+graph TD
+  F1[F1: 用户注册] --> F2[F2: 邮箱验证]
+  F1 --> F3[F3: 用户登录]
+  ...
+```
+<br>
+<span style="color:#888;">## 拓扑排序（开发顺序）</span><br>
+<span style="color:#888;">1. F1 → 2. F2 → 3. F3,F4 → ...</span><br>
+<br>
+<span style="color:#888;">## Feature 索引</span><br>
+<span style="color:#888;">| ID | Feature | 文件 | Issue | Priority | 状态 |</span><br>
+<span style="color:#888;">| F1 | 用户注册 | [F1-用户注册.md](./F1-用户注册.md) | #1 | P0 | 🔴待开发 |</span><br>
+<span style="color:#888;">| F2 | 邮箱验证 | [F2-邮箱验证.md](./F2-邮箱验证.md) | #2 | P0 | 🔴待开发 |</span><br>
+<span style="color:#888;">| ... |</span><br>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>优势对比</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr style="background:#f5f5f5;">
+      <th style="padding:6px;"></th><th style="padding:6px;">一个大文件</th><th style="padding:6px;background:#d4edda;">每个 Feature 独立文件</th>
+    </tr>
+    <tr><td style="padding:6px;">并行开发</td><td style="padding:6px;">❌ 回填时冲突频繁</td><td style="background:#d4edda;padding:6px;">✅ 各改各的，不冲突</td></tr>
+    <tr><td style="padding:6px;">Issue 引用</td><td style="padding:6px;">链接到文件锚点</td><td style="background:#d4edda;padding:6px;">✅ 直接链接到自己的文件</td></tr>
+    <tr><td style="padding:6px;">上下文清晰度</td><td style="padding:6px;">混在一起，滚动查看</td><td style="background:#d4edda;padding:6px;">✅ 打开即看，只关心自己的上下游</td></tr>
+    <tr><td style="padding:6px;">全貌总览</td><td style="padding:6px;">✅ 一个文件看完</td><td style="padding:6px;">✅ README.md 有全局 DAG + 索引表</td></tr>
+    <tr><td style="padding:6px;">状态追踪</td><td style="padding:6px;">靠锚点定位</td><td style="background:#d4edda;padding:6px;">✅ README 表格一目了然</td></tr>
+  </table>
+</div>

@@ -1,0 +1,215 @@
+<h2>最干净的方案：GitHub 做通信层，PM 是唯一写文件的人</h2>
+<p class="subtitle">本地文件零竞争。Coder/Tester/Reviewer 只操作 GitHub，PM 读 GitHub 做决策，写本地文件做记录</p>
+
+<div class="section">
+  <h3>🎯 核心原则</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:16px;font-size:14px;">
+      <div style="text-align:center;padding:20px;background:#2d2d2d;color:#fff;border-radius:8px;">
+        <strong>只有 PM 能改本地文件。Coder/Tester/Reviewer 只操作 GitHub。</strong><br>
+        <span style="color:#888;">通信靠 GitHub PR + Checks + Reviews，不靠本地文件</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔄 每个 Agent 做什么（在哪里）</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr style="background:#555;color:#fff;">
+      <th style="padding:6px;">Agent</th>
+      <th style="padding:6px;">操作 GitHub</th>
+      <th style="padding:6px;">读本地文件</th>
+      <th style="padding:6px;">写本地文件</th>
+    </tr>
+    <tr>
+      <td style="padding:6px;color:#4caf50;"><strong>💻 Coder</strong></td>
+      <td style="padding:6px;">
+        • 读 Feature 文件、规范文件<br>
+        • <code>gh pr create</code> 提 PR<br>
+        • <code>gh pr merge</code>（如果审查通过）
+      </td>
+      <td style="padding:6px;">
+        • feature-map/F{n}.md<br>
+        • feature-map/README.md（读 DAG）<br>
+        • agents/coder/ 规范
+      </td>
+      <td style="padding:6px;">
+        • 源码文件<br>
+        • feature-map/F{n}.md（回填 Impl Layer）
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:6px;color:#2196f3;"><strong>🧪 Tester</strong></td>
+      <td style="padding:6px;">
+        • 读 PR 的 diff<br>
+        • <code>gh pr comment</code>（测试结果）<br>
+        • 提交测试代码到 PR 分支
+      </td>
+      <td style="padding:6px;">• PRD.md（验收标准）</td>
+      <td style="padding:6px;"><strong>❌ 不写任何本地文件</strong></td>
+    </tr>
+    <tr>
+      <td style="padding:6px;color:#9c27b0;"><strong>🔍 Reviewer</strong></td>
+      <td style="padding:6px;">
+        • 读 PR 的 diff<br>
+        • <code>gh pr review --approve</code><br>
+        • <code>gh pr review --request-changes</code>
+      </td>
+      <td style="padding:6px;">• agents/reviewer/ 规范</td>
+      <td style="padding:6px;"><strong>❌ 不写任何本地文件</strong></td>
+    </tr>
+    <tr style="background:#fff3cd;">
+      <td style="padding:6px;color:#ff9800;"><strong>🤖 PM</strong></td>
+      <td style="padding:6px;">
+        • <code>gh pr list</code> 轮询 PR 状态<br>
+        • <code>gh pr view</code> 查看审查状态<br>
+        • <code>gh pr merge</code>（满足条件时）<br>
+        • <code>gh issue close</code>
+      </td>
+      <td style="padding:6px;">• GitHub PR 状态（唯一真相源）</td>
+      <td style="padding:6px;">
+        <strong>• feature-map/README.md</strong><br>
+        （唯一写者，无竞争）<br>
+        • .status/*（可选，仅 PM 写）
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>📡 "通知"机制：GitHub 原生，不需要自己造</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;">
+      <div style="display:flex;flex-direction:column;gap:10px;align-items:center;">
+
+        <div style="display:flex;gap:30px;align-items:flex-start;">
+          <div style="text-align:center;">
+            <div style="background:#4caf50;color:#000;padding:8px 12px;border-radius:6px;">Coder</div>
+            <div style="margin-top:8px;font-size:11px;color:#888;">通知方式：</div>
+            <div style="font-size:11px;">gh pr create</div>
+            <div style="font-size:11px;">→ PR #13 出现在 GitHub 上</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="background:#2196f3;color:#fff;padding:8px 12px;border-radius:6px;">Tester</div>
+            <div style="margin-top:8px;font-size:11px;color:#888;">通知方式：</div>
+            <div style="font-size:11px;">gh pr comment "✅"</div>
+            <div style="font-size:11px;">→ PR #13 出现评论</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="background:#9c27b0;color:#fff;padding:8px 12px;border-radius:6px;">Reviewer</div>
+            <div style="margin-top:8px;font-size:11px;color:#888;">通知方式：</div>
+            <div style="font-size:11px;">gh pr review --approve</div>
+            <div style="font-size:11px;">→ PR #13 状态变为 "Approved"</div>
+          </div>
+        </div>
+
+        <div style="font-size:20px;color:#888;">↓</div>
+
+        <div style="text-align:center;background:#2d2d2d;color:#e0e0e0;padding:16px;border-radius:8px;width:80%;">
+          <div style="font-size:14px;margin-bottom:8px;"><strong>PM Agent 轮询 GitHub（每 1 分钟）</strong></div>
+          <div style="font-size:12px;font-family:monospace;text-align:left;line-height:1.6;">
+<span style="color:#888;">$ gh pr list --json number,title,reviews,comments,statusChecks</span><br>
+<span style="color:#888;">[</span><br>
+<span style="color:#888;">  {</span><br>
+<span style="color:#888;">    "number": 13,</span><br>
+<span style="color:#888;">    "title": "F3: 用户登录",</span><br>
+<span style="color:#2196f3;">    "comments": [{"body": "✅ Tests passed: 5/5"}],</span><br>
+<span style="color:#9c27b0;">    "reviews": [{"state": "APPROVED"}],</span><br>
+<span style="color:#4caf50;">    "statusChecks": [{"conclusion": "SUCCESS"}]</span><br>
+<span style="color:#888;">  }</span><br>
+<span style="color:#888;">]</span><br><br>
+<span style="color:#ff9800;">→ test✅ + review✅ → gh pr merge 13 → gh issue close 3</span><br>
+<span style="color:#ff9800;">→ 写 feature-map/README.md: F3 🟢（只有 PM 写，无竞争）</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🤖 PM Agent 的判断逻辑</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;font-family:monospace;background:#1a1a2e;color:#e0e0e0;line-height:1.6;">
+<span style="color:#888;"># PM Agent 循环 — 所有信息来自 GitHub</span>
+<br>
+<span style="color:#ff9800;">while true:</span>
+<br>
+  <span style="color:#888;"># 1. 读 GitHub（唯一真相源）</span>
+  <span style="color:#ff9800;">prs = gh pr list --json number,title,body,reviews,comments</span>
+<br>
+  <span style="color:#ff9800;">for pr in prs:</span>
+    <span style="color:#888;"># 从 PR title 提取 Feature ID： "F3: 用户登录" → F3</span>
+    <span style="color:#ff9800;">fid = extract_feature_id(pr.title)</span>
+<br>
+    <span style="color:#888;"># 2. 判断条件</span>
+    <span style="color:#2196f3;">test_ok = any("[✅] Tests passed" in c.body for c in pr.comments)</span>
+    <span style="color:#9c27b0;">review_ok = any(r.state == "APPROVED" for r in pr.reviews)</span>
+<br>
+    <span style="color:#ff9800;">if test_ok and review_ok:</span>
+      <span style="color:#888;"># 3. 合并 + 关闭</span>
+      <span style="color:#4caf50;">gh pr merge {pr.number} --squash --auto</span>
+      <span style="color:#4caf50;">gh issue close {issue_number}</span>
+      <span style="color:#888;"># 4. 写本地文件（只有 PM）</span>
+      <span style="color:#4caf50;">更新 feature-map/README.md: {fid} → 🟢</span>
+<br>
+    <span style="color:#ff9800;">elif not test_ok and not review_ok:</span>
+      <span style="color:#888;"># 有人不通过 → 不操作，等 Coder 修复后重新提 PR</span>
+<br>
+  <span style="color:#ff9800;">sleep 60</span>  <span style="color:#888;"># 1 分钟轮询</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📊 最终状态管理对比</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr style="background:#f5f5f5;"><th style="padding:6px;">维度</th><th style="padding:6px;">方案 A（本地文件多人写）</th><th style="padding:6px;">方案 B（GitHub 通信 + PM 唯一写）</th></tr>
+    <tr>
+      <td style="padding:6px;">本地文件竞争</td>
+      <td style="padding:6px;color:#e65100;">有 — 需要 lock/mkdir</td>
+      <td style="padding:6px;color:#4caf50;">无 — 只有 PM 写本地文件</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">通信延迟</td>
+      <td style="padding:6px;">秒级（读文件）</td>
+      <td style="padding:6px;">分钟级（轮询 GitHub API）</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">Agent 耦合</td>
+      <td style="padding:6px;">紧——共享本地 .status/</td>
+      <td style="padding:6px;color:#4caf50;">松——只通过 GitHub PR 交互</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">人类可观测性</td>
+      <td style="padding:6px;">需看 feature-map README</td>
+      <td style="padding:6px;color:#4caf50;">GitHub PR 页面一目了然</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">断线重连</td>
+      <td style="padding:6px;">本地锁可能残留</td>
+      <td style="padding:6px;color:#4caf50;">GitHub API 无状态，天然容错</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">通知机制</td>
+      <td style="padding:6px;">自己实现</td>
+      <td style="padding:6px;color:#4caf50;">GitHub 原生：PR review/comments/checks</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>这个方向可以吗？</h3>
+  <div class="options">
+    <div class="option" data-choice="yes-github" onclick="toggleSelect(this)">
+      <div class="letter">✅</div>
+      <div class="content"><h4>GitHub 做通信层，PM 唯一写本地文件——干净</h4></div>
+    </div>
+    <div class="option" data-choice="concern-github" onclick="toggleSelect(this)">
+      <div class="letter">🤔</div>
+      <div class="content"><h4>还有疑虑</h4></div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,87 @@
+<h2>Upstream Context 三个方案</h2>
+<p class="subtitle">目标：下游 Coder 拿到前序产物，但不需要读大量文件</p>
+
+<div class="section">
+  <h3>方案 A：只读 Impl Layer 段落（不改任何文件）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;">
+<span style="color:#888;"># Coder 开发 F9 时：</span>
+<span style="color:#4caf50;">for dep in F3 F6 F7 F8:</span>
+<span style="color:#4caf50;">  exports += sed -n '/## Implementation Layer/,/^## /p' feature-map/{dep}.md</span>
+<br>
+<span style="color:#888;"># 只提取 Impl Layer 段落，不读整个文件</span>
+<span style="color:#4caf50;"># 结果：</span>
+<span style="color:#4caf50;">  F3 → LoginVO, StpKit.getLoginId()</span>
+<span style="color:#4caf50;">  F6 → RateLimiter, LoginAttemptService</span>
+<span style="color:#4caf50;">  F7 → Product, Sku, ProductService.getById()</span>
+<span style="color:#4caf50;">  F8 → Cart, CartItem, CartService.addItem()</span>
+    </div>
+  </div>
+  <div class="pros-cons">
+    <div class="pros"><h4>优点</h4><ul><li>不改文件格式，零维护成本</li><li>永远是最新的（读到的是源码）</li></ul></div>
+    <div class="cons"><h4>缺点</h4><ul><li>Coder 每次都要执行这个聚合逻辑</li><li>依赖 Feature 文件格式稳定</li></ul></div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>方案 B：自动生成 .exports 摘要文件（每个 Feature 一行）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;">
+<span style="color:#888;">feature-map/</span>
+├── README.md
+├── <span style="color:#ff9800;">.exports</span>                    ← <span style="color:#4caf50;">自动生成，每行一个 Feature 的导出</span>
+│   <span style="color:#ff9800;">F1: User, UserService.create()</span>
+│   <span style="color:#ff9800;">F2: EmailVerificationService.isVerified()</span>
+│   <span style="color:#ff9800;">F3: LoginVO, StpKit.getLoginId(), AuthController</span>
+│   <span style="color:#ff9800;">F4: PasswordResetService</span>
+│   <span style="color:#888;">...</span>
+├── F1-用户注册.md
+└── ...
+<br>
+<span style="color:#888;"># Coder 开发 F9 时：</span>
+<span style="color:#4caf50;">cat feature-map/.exports | grep "^F3:\|^F6:\|^F7:\|^F8:"</span>
+<span style="color:#4caf50;">→ 4 行，一目了然</span>
+    </div>
+  </div>
+  <div class="pros-cons">
+    <div class="pros"><h4>优点</h4><ul><li>读一次就拿到所有上游上下文</li><li>极简格式，不会膨胀</li></ul></div>
+    <div class="cons"><h4>缺点</h4><ul><li>.exports 需要有人维护（谁写？）</li><li>数据冗余（Impl Layer 和 .exports 各一份）</li></ul></div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>方案 C：Feature 文件顶部加 exports 字段（类 frontmatter）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;">
+<span style="color:#888;"># F8: 加入购物车</span>
+<span style="color:#ff9800;">exports: Cart, CartItem, CartService.addItem(), CartService.getCart()</span>
+<br>
+<span style="color:#888;">Issue: #8 | Priority: P1 | Depends On: F7 | Blocks: F9</span>
+<br>
+<span style="color:#888;">## 依赖关系（局部视图）</span>
+...
+<br>
+<span style="color:#888;"># Coder 开发 F9 时，只需读每个上游文件的第 2 行：</span>
+<span style="color:#4caf50;">head -2 feature-map/F3-用户注册.md</span>
+<span style="color:#4caf50;">head -2 feature-map/F8-加入购物车.md</span>
+<span style="color:#4caf50;">...</span>
+    </div>
+  </div>
+  <div class="pros-cons">
+    <div class="pros"><h4>优点</h4><ul><li>不增新文件，数据跟着 Feature 文件走</li><li>一行就能拿到导出清单</li></ul></div>
+    <div class="cons"><h4>缺点</h4><ul><li>改文件格式，需要更新 PM Agent 的模板</li><li>exports 行可能很长（需要折行规范）</li></ul></div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📊 对比</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr style="background:#f5f5f5;"><th></th><th>A: 动态提取</th><th>B: .exports 文件</th><th>C: 文件顶部 exports</th></tr>
+    <tr><td>新文件</td><td>0</td><td style="color:#e65100;">+1</td><td>0</td></tr>
+    <tr><td>改现有格式</td><td>否</td><td>否</td><td style="color:#ff9800;">是</td></tr>
+    <tr><td>Coder 每次读取量</td><td style="color:#e65100;">4 次 sed</td><td style="color:#4caf50;">1 次 grep</td><td style="color:#4caf50;">4 次 head</td></tr>
+    <tr><td>上下文精确度</td><td style="color:#4caf50;">精确</td><td style="color:#ff9800;">可能过期</td><td style="color:#4caf50;">精确</td></tr>
+    <tr><td>维护者</td><td style="color:#4caf50;">无需维护</td><td style="color:#e65100;">需要有人写</td><td style="color:#4caf50;">Coder 回填时顺手写</td></tr>
+    <tr><td>冗余数据</td><td style="color:#4caf50;">无</td><td style="color:#e65100;">有</td><td style="color:#ff9800;">极少量</td></tr>
+  </table>
+</div>

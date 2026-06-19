@@ -1,0 +1,159 @@
+<h2>PROJECT.md — 项目清单文件（唯一入口）</h2>
+<p class="subtitle">整合：全局规范 + Feature 状态 + 可复用 API + 数据模型 + API 路由。Agent 读这一个文件就够了。</p>
+
+<div class="section">
+  <h3>PROJECT.md 完整模板</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;line-height:1.5;">
+<span style="color:#888;"># Project: 电商系统</span>
+<span style="color:#888;">> 最后更新: 2026-06-04 07:15 | 由 PM Agent 自动维护</span>
+<br>
+<span style="color:#888;">---</span>
+<br>
+<span style="color:#888;">## 全局技术规范</span>
+<span style="color:#888;">（来自桥接对话 + coder 规范，所有 Feature 必须遵守）</span>
+<br>
+<span style="color:#ff9800;">认证方案:</span> SaToken + JWT，Token 有效期 7 天，续期窗口 30 分钟
+<span style="color:#ff9800;">缓存策略:</span> Redis，Key 格式 `{项目}:{模块}:{ID}`，默认 TTL 1 小时
+<span style="color:#ff9800;">错误码号段:</span> 1xxx=用户模块，2xxx=商品模块，3xxx=订单模块，4xxx=购物车模块
+<span style="color:#ff9800;">日志规范:</span> @Slf4j，不打敏感信息（手机号脱敏 138****1234）
+<span style="color:#ff9800;">注入方式:</span> @RequiredArgsConstructor 构造注入
+<span style="color:#ff9800;">返回值:</span> 统一 Result<T>，分页用 PageResult<T>
+<span style="color:#ff9800;">数据库审计:</span> 所有表必须含 created_at, updated_at, is_deleted
+<br>
+<span style="color:#888;">---</span>
+<br>
+<span style="color:#888;">## Feature 状态 & 导出</span>
+<br>
+| ID | Feature | 状态 | 可复用 API | 可复用 Model | 可复用常量 |
+|----|---------|:----:|-----------|-------------|-----------|
+| F1 | 用户注册 | 🟢 | UserService.create(dto) | User, RegisterDTO | BusinessErrorEnum.USER_EXISTS |
+| F2 | 邮箱验证 | 🟢 | EmailVerificationService.verify(token)<br>EmailVerificationService.isVerified(uid) | EmailVerification | BusinessErrorEnum.EMAIL_EXPIRED |
+| F3 | 用户登录 | 🟣 | <span style="color:#888;">审</span> LoginService.login(dto)<br><span style="color:#888;">审</span> StpKit.getLoginId() | <span style="color:#888;">审</span> LoginVO, LoginDTO | BusinessErrorEnum.LOGIN_LOCKED |
+| F4 | 密码重置 | 🔴 | — | — | — |
+<br>
+<span style="color:#888;">---</span>
+<br>
+<span style="color:#888;">## API 路由总览</span>
+<br>
+| Method | URL | Feature | Request | Response | 认证 |
+|--------|-----|:------:|---------|----------|:----:|
+| POST | /api/auth/register | F1 | RegisterDTO | Result&lt;User&gt; | 否 |
+| GET | /api/auth/verify-email | F2 | ?token=xxx | Result&lt;Void&gt; | 否 |
+| POST | /api/auth/login | F3 | LoginDTO | Result&lt;LoginVO&gt; | 否 |
+| <span style="color:#888;">开发中</span> | <span style="color:#888;">POST /api/cart/items</span> | <span style="color:#888;">F8</span> | <span style="color:#888;">CartAddDTO</span> | <span style="color:#888;">Result&lt;CartVO&gt;</span> | <span style="color:#888;">是</span> |
+| 🔴 | POST /api/orders/create | F9 | — | — | 是 |
+<br>
+<span style="color:#888;">---</span>
+<br>
+<span style="color:#888;">## 数据模型清单</span>
+<br>
+| Model | 来源 | 表 | 关键字段 |
+|-------|:----:|-----|----------|
+| User | F1 | user | id, phone, email, nickname, status |
+| EmailVerification | F2 | email_verification | id, user_id, token, expires_at |
+| <span style="color:#888;">审</span> LoginVO | <span style="color:#888;">F3</span> | <span style="color:#888;">—(VO)</span> | <span style="color:#888;">token, user, expiresAt</span> |
+| 🔴 Product | F7 | product | — |
+| 🔴 Cart | F8 | cart | — |
+<br>
+<span style="color:#888;">---</span>
+<br>
+<span style="color:#888;">## 开发进度</span>
+<span style="color:#4caf50;">🟢 已完成: 2/10 (F1, F2)</span>
+<span style="color:#ff9800;">🟣 待审查: 1/10 (F3)</span>
+<span style="color:#888;">🔴 待开发: 7/10 (F4-F10)</span>
+<span style="color:#e65100;">⚠️ 需人工介入: 0</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>谁写 PROJECT.md 的哪个部分</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr style="background:#555;color:#fff;"><th style="padding:6px;">段落</th><th style="padding:6px;">谁写</th><th style="padding:6px;">什么时候</th></tr>
+    <tr>
+      <td style="padding:6px;"><strong>全局技术规范</strong></td>
+      <td style="padding:6px;color:#ff9800;">PM Agent</td>
+      <td style="padding:6px;">桥接对话结束后一次性写入</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;"><strong>Feature 状态 & 导出</strong></td>
+      <td style="padding:6px;color:#ff9800;">PM Agent</td>
+      <td style="padding:6px;">每个 Feature 审查通过后更新（读 F{n}.md 的 Impl Layer）</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;"><strong>API 路由总览</strong></td>
+      <td style="padding:6px;color:#ff9800;">PM Agent</td>
+      <td style="padding:6px;">每个 Feature 审查通过后追加</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;"><strong>数据模型清单</strong></td>
+      <td style="padding:6px;color:#ff9800;">PM Agent</td>
+      <td style="padding:6px;">每个 Feature 审查通过后追加</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;"><strong>开发进度</strong></td>
+      <td style="padding:6px;color:#ff9800;">PM Agent</td>
+      <td style="padding:6px;">每次 review 决策后自动更新</td>
+    </tr>
+  </table>
+  <p style="margin-top:12px;"><strong>PM 是 PROJECT.md 的唯一写者。Coder/Tester/Reviewer 只读。</strong></p>
+</div>
+
+<div class="section">
+  <h3>Coder 开发时的流程对比</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr style="background:#f5f5f5;"><th style="padding:6px;"></th><th style="padding:6px;">原来</th><th style="padding:6px;background:#d4edda;">现在</th></tr>
+    <tr>
+      <td style="padding:6px;">了解全局规范</td>
+      <td style="padding:6px;">读 4 个规范文件</td>
+      <td style="padding:6px;background:#d4edda;">读 PROJECT.md 第一段</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">了解前序 Feature 产出了什么</td>
+      <td style="padding:6px;">读 4 个 Feature 文件</td>
+      <td style="padding:6px;background:#d4edda;">读 PROJECT.md "Feature 状态 & 导出" 表格</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">了解已有 API 路由（避免冲突）</td>
+      <td style="padding:6px;">读多个文件推测</td>
+      <td style="padding:6px;background:#d4edda;">读 PROJECT.md "API 路由总览"</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">了解已有 Model（避免重复定义）</td>
+      <td style="padding:6px;">读多个文件推测</td>
+      <td style="padding:6px;background:#d4edda;">读 PROJECT.md "数据模型清单"</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>与其他文件的关系</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;">
+PROJECT.md                  ← <span style="color:#ff9800;">PM 维护，总索引（Agent 读这一个就知道全局）</span>
+    ↑ 聚合自
+    ├── feature-map/README.md     ← <span style="color:#888;">DAG 图 + 拓扑排序（人类看 DAG）</span>
+    ├── feature-map/F{n}.md       ← <span style="color:#888;">每个 Feature 的详细上下文（人类看详情）</span>
+    ├── PRD.md                    ← <span style="color:#888;">验收标准（Tester 读）</span>
+    └── 桥接对话产出               ← <span style="color:#888;">全局技术决策（PM 写入 PROJECT.md 第一段）</span>
+<br>
+<span style="color:#ff9800;">PROJECT.md 不是"又一个文件"——它是所有其他文件的精华提取。</span>
+<span style="color:#ff9800;">Agent 流水线中，Coder 第一步读 PROJECT.md，90% 的上下文就有了。</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>这个方案可以吗？</h3>
+  <div class="options">
+    <div class="option" data-choice="approve-manifest" onclick="toggleSelect(this)">
+      <div class="letter">✅</div>
+      <div class="content"><h4>PROJECT.md 方案很好，替代 Upstream Context + feature-map/README 状态表</h4></div>
+    </div>
+    <div class="option" data-choice="adjust-manifest" onclick="toggleSelect(this)">
+      <div class="letter">🔧</div>
+      <div class="content"><h4>方向对但要调整</h4></div>
+    </div>
+  </div>
+</div>

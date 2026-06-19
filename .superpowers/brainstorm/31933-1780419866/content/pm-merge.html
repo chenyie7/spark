@@ -1,0 +1,180 @@
+<h2>修复：PM Agent 负责合并 + 关闭 Issue</h2>
+<p class="subtitle">Coder/Tester/Reviewer 只提供信号。PM Agent 是唯一可以 merge + close 的角色</p>
+
+<div class="section">
+  <h3>🎭 角色权限矩阵</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr style="background:#555;color:#fff;">
+          <th style="padding:8px;">操作</th>
+          <th style="padding:8px;text-align:center;">PM</th>
+          <th style="padding:8px;text-align:center;">Coder</th>
+          <th style="padding:8px;text-align:center;">Tester</th>
+          <th style="padding:8px;text-align:center;">Reviewer</th>
+        </tr>
+        <tr><td style="padding:6px;">创建 Issue</td><td style="text-align:center;color:#4caf50;">✅</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td></tr>
+        <tr><td style="padding:6px;">写 .status/*-dev</td><td style="text-align:center;color:#4caf50;">✅</td><td style="text-align:center;color:#4caf50;">✅</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td></tr>
+        <tr><td style="padding:6px;">写 .status/*-test</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td><td style="text-align:center;color:#2196f3;">✅</td><td style="text-align:center;">❌</td></tr>
+        <tr><td style="padding:6px;">写 .status/*-review</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td><td style="text-align:center;color:#9c27b0;">✅</td></tr>
+        <tr><td style="padding:6px;">提 PR</td><td style="text-align:center;">❌</td><td style="text-align:center;color:#4caf50;">✅</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td></tr>
+        <tr style="background:#fff3cd;"><td style="padding:6px;"><strong>合并 PR</strong></td><td style="text-align:center;color:#ff9800;"><strong>✅</strong></td><td style="text-align:center;"><strong>❌</strong></td><td style="text-align:center;"><strong>❌</strong></td><td style="text-align:center;"><strong>❌</strong></td></tr>
+        <tr style="background:#fff3cd;"><td style="padding:6px;"><strong>关闭 Issue</strong></td><td style="text-align:center;color:#ff9800;"><strong>✅</strong></td><td style="text-align:center;"><strong>❌</strong></td><td style="text-align:center;"><strong>❌</strong></td><td style="text-align:center;"><strong>❌</strong></td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔄 简化后的 Agent 循环</h3>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:10px;">
+    <div class="card">
+      <div class="card-body">
+        <h4>💻 Coder</h4>
+        <pre style="background:#1a1a2e;padding:8px;border-radius:4px;">
+while true:
+  读黑板
+
+  // 找新任务
+  for F 拓扑序:
+    if 🔴 && 前序全🟢:
+      mkdir F-lock  // 原子
+      失败→continue
+      echo 🟡 > F-dev
+      rmdir F-lock
+      编码→自测→push
+      pr=$(gh pr create)
+      echo $pr > F-pr
+      echo 🟣 > F-dev
+      break
+
+  // 修复被退回的
+  for F 拓扑序:
+    if 🟡 && (test❌ || review❌):
+      retry=$(cat F-retry)
+      if retry>=3:
+        echo ⚠️ > F-dev
+        continue
+      修复→push
+      echo 🟣 > F-dev
+      echo ⏳ > F-test
+      echo ⏳ > F-review
+      break
+
+  // Coder <strong>不做合并检查</strong>
+  sleep 5min</pre>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h4>🧪 Tester</h4>
+        <pre style="background:#1a1a2e;padding:8px;border-radius:4px;">
+while true:
+  读黑板
+
+  for F:
+    if 🟣 && test=⏳:
+      生成验收测试
+      mvn test
+      if 通过: echo ✅ > F-test
+      else:    echo ❌ > F-test
+      break
+
+  // Tester <strong>不做合并</strong>
+  sleep 5min</pre>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h4>🔍 Reviewer</h4>
+        <pre style="background:#1a1a2e;padding:8px;border-radius:4px;">
+while true:
+  读黑板
+
+  for F:
+    if 🟣 && review=⏳:
+      4维审查
+      if 通过:
+        echo ✅ > F-review
+        gh pr approve $pr
+      else:
+        echo ❌ > F-review
+        gh pr request-changes $pr
+      break
+
+  // Reviewer <strong>不做合并</strong>
+  sleep 5min</pre>
+      </div>
+    </div>
+    <div class="card" style="border:2px solid #ff9800;">
+      <div class="card-body">
+        <h4>🤖 PM（唯一合并者）</h4>
+        <pre style="background:#1a1a2e;padding:8px;border-radius:4px;">
+while true:
+  读黑板
+
+  for F 拓扑序:
+    if 🟣 && test✅ && review✅:
+      // 全部通过 → 合并！
+      gh pr merge $(cat F-pr)
+      gh issue close ${F#F}
+      更新 feature-map README
+      echo 🟢 > F-dev
+      break
+
+    if 🟣 && (test❌ || review❌):
+      // 有人不通过 → 退回
+      retry=$(cat F-retry)
+      echo $((retry+1)) > F-retry
+      if $(cat F-retry) >= 3:
+        echo ⚠️ > F-dev
+      else:
+        echo 🟡 > F-dev
+      break
+
+  // 所有🟢？退出
+  if 全部🟢:
+    exit 0
+
+  sleep 5min</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🌙 修正后的夜间流程</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;font-family:monospace;background:#1a1a2e;color:#e0e0e0;line-height:1.5;">
+<span style="color:#888;">22:00 你睡觉。PM 已创建 10 个 Issue</span>
+<br>
+<span style="color:#888;">22:05 Coder 认领 F3 → 🟡 → 编码 → 提 PR #13 → 🟣</span>
+<span style="color:#888;">22:08 Tester 发现 🟣F3 → mvn test → ✅（写 F3-test）</span>
+<span style="color:#888;">22:08 Reviewer 发现 🟣F3 → 4维审查 → LoginDTO 缺 @NotNull → ❌（写 F3-review）</span>
+<br>
+<span style="color:#ff9800;">22:09 PM 检查 F3：🟣 + ✅ + ❌ → 退回 → 🟡（retry=2）</span>
+<br>
+<span style="color:#888;">22:12 Coder 发现 🟡F3 + review❌ → 读 PR comment → 修复 → push → 🟣（重置 ⏳）</span>
+<span style="color:#888;">22:15 Tester → ✅ | Reviewer → ✅</span>
+<br>
+<span style="color:#ff9800;">22:16 PM 检查 F3：🟣 + ✅ + ✅ → gh pr merge #13 → gh issue close #3 → 🟢</span>
+<span style="color:#ff9800;">更新 feature-map/README.md：F3 状态 🔴→🟢</span>
+<br>
+<span style="color:#888;">22:17 Coder 认领 F4（前序全🟢）→ 🟡</span>
+<span style="color:#888;">...</span>
+<br>
+<span style="color:#888;">07:00 你醒来，PM 输出报告：</span>
+<span style="color:#ff9800;">"昨夜完成：F1-F10 全部🟢，0 个⚠️需介入。10/10 Issues 已关闭。"</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>✅ 为什么 PM 做合并是正确的</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr><td style="padding:6px;">1. 职责闭环</td><td style="padding:6px;">PM 创建 Issue → PM 关闭 Issue。Issue 生命周期由同一个人管理</td></tr>
+    <tr><td style="padding:6px;">2. 决策单一</td><td style="padding:6px;">Coder/Tester/Reviewer 只提供信号，不做决策。不会出现"两个 Agent 同时 merge"</td></tr>
+    <tr><td style="padding:6px;">3. 晚上自动化</td><td style="padding:6px;">PM Agent 在全自动模式下不需要人类确认——test✅ + review✅ 就是合并条件（你在 PM 对话阶段已确认过需求）</td></tr>
+    <tr><td style="padding:6px;">4. 白天人工模式</td><td style="padding:6px;">PM Agent 也可以设置"关键 Feature（P0）合并前需人工确认"，白天工作时可以加这个检查点</td></tr>
+  </table>
+</div>

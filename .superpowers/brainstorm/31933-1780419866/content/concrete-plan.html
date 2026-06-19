@@ -1,0 +1,315 @@
+<h2>完整可执行方案：GitHub/Gitea 做通信层</h2>
+<p class="subtitle">所有 Agent 的具体操作、API 调用、判断逻辑。GitHub vs Gitea 对比</p>
+
+<div class="section">
+  <h3>🤖 Coder Agent 的完整执行流程</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#1a1a2e;color:#e0e0e0;line-height:1.6;">
+<span style="color:#888;"># ===== Coder 循环 =====</span>
+<br>
+<span style="color:#ff9800;">while true:</span>
+<br>
+  <span style="color:#888;"># Step 1: 找任务 — 读 PM 维护的唯一本地文件</span>
+  <span style="color:#ff9800;">dag = read feature-map/README.md</span>
+  <span style="color:#ff9800;">for feature in topological_order(dag):</span>
+    <span style="color:#ff9800;">if feature.status == "🔴" and all_predecessors_are("🟢"):</span>
+      <span style="color:#ff9800;">target = feature</span>
+      <span style="color:#ff9800;">break</span>
+<br>
+  <span style="color:#ff9800;">if target is None:</span>
+    <span style="color:#888;"># 没有可开发的任务 — 检查是否有被退回的</span>
+    <span style="color:#ff9800;">for feature in topological_order(dag):</span>
+      <span style="color:#ff9800;">if feature.status == "🟡":  # 被退回，需要修复</span>
+        <span style="color:#ff9800;">pr = gh pr view --json number,comments,reviews #{feature.pr}</span>
+        <span style="color:#ff9800;">if pr.reviews has "CHANGES_REQUESTED":</span>
+          <span style="color:#ff9800;">target = feature  # 需要修复</span>
+          <span style="color:#ff9800;">break</span>
+<br>
+  <span style="color:#ff9800;">if target is None:</span>
+    <span style="color:#ff9800;">sleep 300; continue</span>
+<br>
+  <span style="color:#888;"># Step 2: 开发</span>
+  <span style="color:#4caf50;">git checkout -b feature/F{target.id}</span>
+  <span style="color:#4caf50;">read feature-map/F{target.id}-{name}.md</span>
+  <span style="color:#4caf50;">read upstream_context from feature file</span>
+  <span style="color:#4caf50;">read agents/coder/ 规范文件</span>
+  <span style="color:#4caf50;">implement code</span>
+  <span style="color:#4caf50;">run self-test: mvn test</span>
+<br>
+  <span style="color:#888;"># Step 3: 提交 PR</span>
+  <span style="color:#4caf50;">git add . && git commit -m "feat: F{id} {name}"</span>
+  <span style="color:#4caf50;">git push -u origin feature/F{id}</span>
+  <span style="color:#4caf50;">pr_num = gh pr create \</span>
+  <span style="color:#4caf50;">  --title "F{id}: {name}" \</span>
+  <span style="color:#4caf50;">  --body "关联 Issue #{id} | Feature: [F{id}](feature-map/F{id}-{name}.md)" \</span>
+  <span style="color:#4caf50;">  --base main</span>
+<br>
+  <span style="color:#888;"># Step 4: 回填 Implementation Layer（Feature 文件，不是状态文件）</span>
+  <span style="color:#4caf50;">update feature-map/F{id}-{name}.md:</span>
+  <span style="color:#4caf50;">  Implementation Layer:</span>
+  <span style="color:#4caf50;">    Changed Files: [list]</span>
+  <span style="color:#4caf50;">    Exported APIs: [list]</span>
+  <span style="color:#4caf50;">    Exported Models: [list]</span>
+  <span style="color:#4caf50;">git add feature-map/F{id}-{name}.md && git commit && git push</span>
+<br>
+  <span style="color:#888;"># Coder 不写 README.md 状态表！那个只有 PM 写</span>
+  <span style="color:#888;"># Coder 不写 .status/ 文件！没有 .status/ 目录</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🧪 Tester Agent 的完整执行流程</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#1a1a2e;color:#e0e0e0;line-height:1.6;">
+<span style="color:#888;"># ===== Tester 循环 =====</span>
+<br>
+<span style="color:#ff9800;">while true:</span>
+<br>
+  <span style="color:#888;"># Step 1: 找待测试的 PR</span>
+  <span style="color:#ff9800;">open_prs = gh pr list --state open --json number,title,labels,comments</span>
+<br>
+  <span style="color:#ff9800;">for pr in open_prs:</span>
+    <span style="color:#888;"># 判断是否已经被我测试过</span>
+    <span style="color:#ff9800;">already_tested = any("🧪 Test Result" in c.body for c in pr.comments</span>
+    <span style="color:#ff9800;">                     if c.author == "coder-bot")</span>
+    <span style="color:#ff9800;">if not already_tested:</span>
+      <span style="color:#ff9800;">target = pr</span>
+      <span style="color:#ff9800;">break</span>
+<br>
+  <span style="color:#ff9800;">if target is None: sleep 60; continue</span>
+<br>
+  <span style="color:#888;"># Step 2: 生成并运行验收测试</span>
+  <span style="color:#2196f3;">fid = extract_feature_id(pr.title)  # "F3: 用户登录" → F3</span>
+  <span style="color:#2196f3;">ac = read PRD.md section for F{fid}</span>
+  <span style="color:#2196f3;">git checkout feature/F{fid}</span>
+  <span style="color:#2196f3;">generate acceptance tests from ac.Given/When/Then</span>
+  <span style="color:#2196f3;">result = mvn test</span>
+<br>
+  <span style="color:#888;"># Step 3: 通过 PR 评论通知 PM</span>
+  <span style="color:#2196f3;">if result.passed:</span>
+  <span style="color:#2196f3;">  gh pr comment {pr.number} --body "## 🧪 Test Result</span>
+  <span style="color:#2196f3;">    ✅ All {result.total} acceptance tests passed</span>
+  <span style="color:#2196f3;">    {result.summary}"</span>
+  <span style="color:#2196f3;">else:</span>
+  <span style="color:#2196f3;">  gh pr comment {pr.number} --body "## 🧪 Test Result</span>
+  <span style="color:#2196f3;">    ❌ {result.failed}/{result.total} tests failed</span>
+  <span style="color:#2196f3;">    {result.failures}"</span>
+<br>
+  <span style="color:#2196f3;">git checkout main && git branch -d feature/F{fid}</span>
+<br>
+  <span style="color:#888;"># Tester 不写任何本地文件</span>
+  <span style="color:#888;"># Tester 不 merge、不 close issue</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔍 Reviewer Agent 的完整执行流程</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#1a1a2e;color:#e0e0e0;line-height:1.6;">
+<span style="color:#888;"># ===== Reviewer 循环 =====</span>
+<br>
+<span style="color:#ff9800;">while true:</span>
+<br>
+  <span style="color:#888;"># Step 1: 找待审查的 PR</span>
+  <span style="color:#ff9800;">open_prs = gh pr list --state open --json number,title,reviews</span>
+<br>
+  <span style="color:#ff9800;">for pr in open_prs:</span>
+    <span style="color:#ff9800;">my_review = [r for r in pr.reviews if r.author == "reviewer-bot"]</span>
+    <span style="color:#ff9800;">if not my_review:  # 还没审查过</span>
+      <span style="color:#ff9800;">target = pr</span>
+      <span style="color:#ff9800;">break</span>
+<br>
+  <span style="color:#ff9800;">if target is None: sleep 60; continue</span>
+<br>
+  <span style="color:#888;"># Step 2: 审查代码</span>
+  <span style="color:#9c27b0;">fid = extract_feature_id(pr.title)</span>
+  <span style="color:#9c27b0;">git checkout feature/F{fid}</span>
+  <span style="color:#9c27b0;">read agents/reviewer/structure-check.md</span>
+  <span style="color:#9c27b0;">read agents/reviewer/quality-check.md</span>
+  <span style="color:#9c27b0;">read agents/reviewer/auth-check.md</span>
+  <span style="color:#9c27b0;">read agents/reviewer/infra-check.md</span>
+  <span style="color:#9c27b0;">result = run_4_dimension_review()</span>
+<br>
+  <span style="color:#888;"># Step 3: 通过 PR Review 通知 PM</span>
+  <span style="color:#9c27b0;">if result.all_pass():</span>
+  <span style="color:#9c27b0;">  gh pr review {pr.number} --approve --body "✅ LGTM"</span>
+  <span style="color:#9c27b0;">else:</span>
+  <span style="color:#9c27b0;">  gh pr review {pr.number} --request-changes --body "{result.issues}"</span>
+<br>
+  <span style="color:#9c27b0;">git checkout main && git branch -d feature/F{fid}</span>
+<br>
+  <span style="color:#888;"># Reviewer 不写任何本地文件</span>
+  <span style="color:#888;"># Reviewer 不 merge、不 close issue</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🤖 PM Agent 的完整执行流程（唯一决策者）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:11px;font-family:monospace;background:#1a1a2e;color:#e0e0e0;line-height:1.6;">
+<span style="color:#888;"># ===== PM 循环 =====</span>
+<br>
+<span style="color:#ff9800;">while true:</span>
+<br>
+  <span style="color:#888;"># Step 1: 从 GitHub 读取所有 PR 状态</span>
+  <span style="color:#ff9800;">open_prs = gh pr list --state open --json number,title,reviews,comments</span>
+<br>
+  <span style="color:#ff9800;">for pr in open_prs:</span>
+    <span style="color:#ff9800;">fid = extract_feature_id(pr.title)</span>
+<br>
+    <span style="color:#888;"># Step 2: 判断测试和审查是否都完成了</span>
+    <span style="color:#2196f3;">test_comment = find_comment_by_pattern(pr.comments, "🧪 Test Result")</span>
+    <span style="color:#9c27b0;">review = get_latest_review_by_me_or_bot(pr.reviews)</span>
+<br>
+    <span style="color:#888;"># Step 3: 决策</span>
+    <span style="color:#ff9800;">if test_comment and "✅" in test_comment.body:</span>
+      <span style="color:#2196f3;">test_ok = True</span>
+    <span style="color:#ff9800;">elif test_comment and "❌" in test_comment.body:</span>
+      <span style="color:#2196f3;">test_ok = False</span>
+    <span style="color:#ff9800;">else:</span>
+      <span style="color:#2196f3;">continue  # 还在等 Tester</span>
+<br>
+    <span style="color:#ff9800;">if review and review.state == "APPROVED":</span>
+      <span style="color:#9c27b0;">review_ok = True</span>
+    <span style="color:#ff9800;">elif review and review.state == "CHANGES_REQUESTED":</span>
+      <span style="color:#9c27b0;">review_ok = False</span>
+    <span style="color:#ff9800;">else:</span>
+      <span style="color:#9c27b0;">continue  # 还在等 Reviewer</span>
+<br>
+    <span style="color:#ff9800;">if test_ok and review_ok:</span>
+      <span style="color:#888;"># ✅ 合并！</span>
+      <span style="color:#4caf50;">gh pr merge {pr.number} --squash --delete-branch</span>
+      <span style="color:#4caf50;">gh issue close {fid}</span>
+      <span style="color:#4caf50;">gh issue comment {fid} --body "✅ Merged via PR #{pr.number}"</span>
+      <span style="color:#888;"># 更新本地状态表（只有 PM 写）</span>
+      <span style="color:#4caf50;">update feature-map/README.md: F{fid} → 🟢</span>
+      <span style="color:#4caf50;">git add feature-map/README.md && git commit && git push</span>
+<br>
+    <span style="color:#ff9800;">elif not test_ok or not review_ok:</span>
+      <span style="color:#888;"># ❌ 不合并，不操作。等 Coder 修复后重新提 PR</span>
+      <span style="color:#888;"># Tester 和 Reviewer 的评论已经说明了原因</span>
+      <span style="color:#888;"># Coder 读到 CHANGES_REQUESTED 或 ❌ comment 就知道要修复</span>
+<br>
+  <span style="color:#888;"># Step 4: 所有 Issue 都关了？</span>
+  <span style="color:#ff9800;">all_done = all issues from PM's feature-map are closed on GitHub</span>
+  <span style="color:#ff9800;">if all_done:</span>
+    <span style="color:#ff9800;">print "🌅 全部完成！{n}/{n} Issues 已关闭。"</span>
+    <span style="color:#ff9800;">exit 0</span>
+<br>
+  <span style="color:#ff9800;">sleep 60</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔄 Gitea 能否实现？</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr style="background:#555;color:#fff;">
+      <th style="padding:6px;">功能</th>
+      <th style="padding:6px;">GitHub CLI</th>
+      <th style="padding:6px;">Gitea CLI (tea)</th>
+      <th style="padding:6px;">可用？</th>
+    </tr>
+    <tr>
+      <td style="padding:6px;">创建 PR</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr create --title --body --base</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea pr create --title --description --base</code></td>
+      <td style="padding:6px;color:#4caf50;">✅</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">列出 PR</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr list --state open --json</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea pr list --state open --output json</code></td>
+      <td style="padding:6px;color:#4caf50;">✅</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">PR 评论</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr comment {n} --body</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea comment --repo xxx --type pr</code></td>
+      <td style="padding:6px;color:#4caf50;">✅</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">PR Review (approve)</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr review --approve</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea pr review --approve</code></td>
+      <td style="padding:6px;color:#4caf50;">✅（Gitea 1.18+）</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">PR Review (request changes)</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr review --request-changes</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea pr review --request-changes</code></td>
+      <td style="padding:6px;color:#4caf50;">✅</td>
+    </tr>
+    <tr style="background:#fff3cd;">
+      <td style="padding:6px;">PR 合并</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr merge --squash</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea pr merge --squash</code></td>
+      <td style="padding:6px;color:#ff9800;">⚠️ 需要 Gitea 1.20+</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">关闭 Issue</td>
+      <td style="padding:6px;font-size:11px;"><code>gh issue close</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea issue close</code></td>
+      <td style="padding:6px;color:#4caf50;">✅</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">JSON 输出解析</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr list --json --jq</code></td>
+      <td style="padding:6px;font-size:11px;"><code>tea pr list --output json | jq</code></td>
+      <td style="padding:6px;color:#4caf50;">✅</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">PR Checks/CI 状态</td>
+      <td style="padding:6px;font-size:11px;"><code>gh pr checks</code></td>
+      <td style="padding:6px;font-size:11px;">REST API <code>/repos/{owner}/{repo}/statuses</code></td>
+      <td style="padding:6px;color:#4caf50;">✅</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>🎯 Gitea 结论：完全可以，只需换 CLI</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:6px;font-weight:bold;">Gitea 版本要求</td><td style="padding:6px;">≥ 1.20（2024年发布的版本，支持 PR review + merge）</td></tr>
+        <tr><td style="padding:6px;font-weight:bold;">CLI 工具</td><td style="padding:6px;"><code>tea</code>（Gitea 官方 CLI）替代 <code>gh</code></td></tr>
+        <tr><td style="padding:6px;font-weight:bold;">差异点</td><td style="padding:6px;"><code>tea</code> 命令参数名略有不同（<code>--description</code> 代替 <code>--body</code>），JSON 输出字段名略有差异</td></tr>
+        <tr><td style="padding:6px;font-weight:bold;">适配成本</td><td style="padding:6px;background:#d4edda;">Agent prompt 中替换 CLI 命令即可，架构不需要改</td></tr>
+        <tr><td style="padding:6px;font-weight:bold;">私有部署优势</td><td style="padding:6px;background:#d4edda;">无需外网、数据自控、审阅速度不受 GitHub API 限流影响</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📊 最终架构总览</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;text-align:center;">
+      <pre style="background:#2d2d2d;color:#e0e0e0;padding:16px;border-radius:8px;text-align:left;display:inline-block;">
+┌─────────────────────────────────────────────────┐
+│                  GitHub / Gitea                  │
+│  PR #13 ──┬── 💬 Tester comment "✅"             │
+│           ├── ✅ Reviewer approved               │
+│           └── ⏳ PM 轮询                          │
+│                                                  │
+│  唯一真相源：PR 的状态 + 评论 + Review            │
+│  Coder/Tester/Reviewer 只操作 GitHub              │
+└──────────────┬──────────────────────────────────┘
+               │  gh pr list / tea pr list（轮询）
+               ▼
+┌─────────────────────────────────────────────────┐
+│                  🤖 PM Agent                      │
+│                                                  │
+│  读：GitHub PR 状态（API 轮询，每 60s）            │
+│  判断：test✅ + review✅ → 合并                   │
+│  写：feature-map/README.md（唯一写者，零竞争）     │
+│  操作：gh pr merge / gh issue close              │
+└─────────────────────────────────────────────────┘
+      </pre>
+    </div>
+  </div>
+</div>

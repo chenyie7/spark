@@ -10,22 +10,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **coder/** — 架构约束：按规范写 Java 代码
 2. **reviewer/** — 代码审计：多维度审查 AI 生成的代码
 
+> 未来规划：阶段 1（analyst）—— 需求 → PRD → 技术规格 → API 设计 → 数据库设计。待建设。
+
 ## 如何使用
 
-### 完整开发流程
+### 开发流程
 
 ```
-阶段 1（analyst）：需求 → PRD → 技术规格 → API 设计 → 数据库设计
-  入口：agents/analyst/README.md
-
-阶段 2（coder）：按设计文档 + 架构规范生成 Java 代码
+阶段 1（coder）：按设计文档 + 架构规范生成 Java 代码
   入口：agents/coder/README.md
 
-阶段 3（reviewer）：多维度审计 + 输出审计报告 + 修复建议
+阶段 2（reviewer）：多维度审计 + 输出审计报告 + 修复建议
   入口：agents/reviewer/README.md
 ```
 
-### 仅开发（已有设计文档时）
+### 已有设计文档时
 
 在编写任何 Java 代码前，先读取 `agents/coder/README.md`（规范索引），根据当前任务类型找到对应的规范文件，读取并遵守。
 

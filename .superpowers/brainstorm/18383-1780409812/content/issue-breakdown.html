@@ -1,0 +1,54 @@
+<h2>PRD → Issues：怎么拆？拆多细？</h2>
+<p class="subtitle">Issue 是 Coder Agent 的输入，拆得太粗 coder 做不完，拆得太细碎片化</p>
+
+<div class="section">
+  <h3>第一个问题：拆分粒度</h3>
+  <div class="options">
+    <div class="option" data-choice="feature" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>按功能点拆分</h3>
+        <p>一个用户故事 = 一个 Issue<br>例："用户手机号+验证码登录"是一个 Issue</p>
+        <div class="label" style="margin-top:4px;">粒度：中等，适合大多数场景</div>
+      </div>
+    </div>
+    <div class="option" data-choice="endpoint" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>按接口拆分</h3>
+        <p>一个 API 端点 = 一个 Issue<br>例："POST /api/login/send-code" 单独成 Issue</p>
+        <div class="label" style="margin-top:4px;">粒度：细，适合 API 密集的场景</div>
+      </div>
+    </div>
+    <div class="option" data-choice="story" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>按用户故事（Epic → Story）</h3>
+        <p>一个大需求 = 一个 Epic，拆成 3-8 个 Story<br>每个 Story 是一个完整的前后端开发单元</p>
+        <div class="label" style="margin-top:4px;">粒度：灵活，推荐</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>第二个问题：Issue 里放什么信息？</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="prd-link" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content"><h4>引用 PRD 对应章节</h4><p>链接到 PRD 中的用户故事和验收标准</p></div>
+    </div>
+    <div class="option" data-choice="ac" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content"><h4>验收标准内联</h4><p>把 Given/When/Then 直接写在 Issue 里，coder 不需要跳转查 PRD</p></div>
+    </div>
+    <div class="option" data-choice="tech-hint" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content"><h4>技术提示</h4><p>建议涉及的包、表、接口路径前缀，给 coder 一个起点</p></div>
+    </div>
+    <div class="option" data-choice="dep" onclick="toggleSelect(this)">
+      <div class="letter">4</div>
+      <div class="content"><h4>依赖关系</h4><p>标记 BlockedBy：Issue B 依赖 Issue A 先完成</p></div>
+    </div>
+  </div>
+</div>

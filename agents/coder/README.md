@@ -6,6 +6,13 @@
 
 ## 一、规范文件清单
 
+> **分类原则：**
+> - `architecture/` — 项目骨架（包结构、模块拆分）
+> - `layered/` — 分层代码规范（每层怎么写、怎么调）
+> - `infrastructure/` — 框架/中间件集成规范（Result、Swagger、Config、Logging、Redis）
+> - `auth/` — 认证授权（SaToken 全场景方案）
+> - `quality/` — 代码编写质量规范（风格、校验、i18n、错误码、数据库建表）
+
 ```
 architecture/                        # 架构规范
 ├── package-structure-guide.md       # 单体项目包结构
@@ -21,7 +28,8 @@ infrastructure/                      # 基础设施
 ├── swagger-guide.md                 # Swagger/Knife4j 文档
 ├── config-guide.md                  # 配置管理
 ├── logging-guide.md                 # 日志规范
-└── redis-guide.md                   # Redis 开发规范
+├── redis-guide.md                   # Redis 开发规范
+└── file-upload-guide.md             # 文件上传/下载安全规范
 
 auth/                               # 认证授权规范
 ├── auth-overview.md                 # 总览索引（先读，需要询问用户需要什么类型的登录架构）

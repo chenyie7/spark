@@ -1,0 +1,124 @@
+<h2>Feature Map 用 Mermaid + Markdown：可读可渲染</h2>
+<p class="subtitle">一个文件同时满足：人类可视化浏览 + Agent 结构化读取</p>
+
+<div class="section">
+  <h3>feature-map.md 完整示例</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:16px;font-size:12px;font-family:monospace;background:#2d2d2d;color:#e0e0e0;line-height:1.6;border-radius:8px;">
+<span style="color:#888;"># Feature Map: 电商小程序</span>
+<br>
+<span style="color:#888;">## 依赖关系图（DAG）</span>
+<br>
+<span style="color:#888;">```mermaid</span>
+<span style="color:#2196f3;">graph TD</span>
+  <span style="color:#e91e63;">F1</span>[<span style="color:#e91e63;">F1: 用户注册登录</span>]
+  <span style="color:#e91e63;">F2</span>[<span style="color:#e91e63;">F2: 商品搜索</span>]
+  <span style="color:#e91e63;">F3</span>[<span style="color:#e91e63;">F3: 商品详情</span>]
+  <span style="color:#e91e63;">F4</span>[<span style="color:#e91e63;">F4: 加入购物车</span>]
+  <span style="color:#e91e63;">F5</span>[<span style="color:#e91e63;">F5: 商品收藏</span>]
+  <span style="color:#e91e63;">F6</span>[<span style="color:#e91e63;">F6: 下单结算</span>]
+  <br>
+  <span style="color:#e91e63;">F1</span> <span style="color:#2196f3;">--&gt;</span> <span style="color:#e91e63;">F2</span>
+  <span style="color:#e91e63;">F1</span> <span style="color:#2196f3;">--&gt;</span> <span style="color:#e91e63;">F3</span>
+  <span style="color:#e91e63;">F2</span> <span style="color:#2196f3;">--&gt;</span> <span style="color:#e91e63;">F3</span>
+  <span style="color:#e91e63;">F3</span> <span style="color:#2196f3;">--&gt;</span> <span style="color:#e91e63;">F4</span>
+  <span style="color:#e91e63;">F3</span> <span style="color:#2196f3;">--&gt;</span> <span style="color:#e91e63;">F5</span>
+  <span style="color:#e91e63;">F4</span> <span style="color:#2196f3;">--&gt;</span> <span style="color:#e91e63;">F6</span>
+<span style="color:#888;">```</span>
+<br>
+<span style="color:#888;">## 开发顺序（拓扑排序）</span>
+<span style="color:#4caf50;">1. F1 → 2. F2 → 3. F3 → 4. F4, F5(并行) → 5. F6</span>
+<br>
+<span style="color:#888;">---</span>
+<br>
+<span style="color:#888;">## F1: 用户注册登录 {#F1}</span>
+<br>
+<span style="color:#888;">**Issue:**</span> #1 &nbsp; <span style="color:#888;">**Priority:**</span> P0 &nbsp; <span style="color:#888;">**Depends:**</span> 无
+<br>
+<span style="color:#888;">### Business Layer</span>
+用户可通过手机号+验证码注册/登录。首次注册自动创建档案。支持Token续期。
+<br>
+<span style="color:#888;">### Design Layer</span>
+- API: `POST /api/auth/send-code`, `POST /api/auth/login`
+- 表: user(id, phone, nickname, created_at)
+- DTO: SendCodeDTO, LoginDTO / VO: LoginVO
+- 复用: Result&lt;T&gt;, SaToken 认证框架
+<br>
+<span style="color:#888;">### Implementation Layer</span> <span style="color:#888;">（开发后回填）</span>
+- changed_files: `AuthController.java`, `UserService.java`, `User.java`
+- exported_apis: `StpKit.getLoginId()`, `UserService.getById()`
+- exported_models: `User`, `LoginVO`
+<br>
+<span style="color:#888;">---</span>
+<br>
+<span style="color:#888;">## F4: 加入购物车 {#F4}</span>
+<br>
+<span style="color:#888;">**Issue:**</span> #4 &nbsp; <span style="color:#888;">**Priority:**</span> P1 &nbsp; <span style="color:#888;">**Depends:**</span> F3
+<br>
+<span style="color:#888;">### Business Layer</span>
+用户从商品详情页点击"加入购物车"，系统将商品加入购物车并返回状态。同一商品再次加入数量+1。
+<br>
+<span style="color:#888;">### Design Layer</span>
+- API: `POST /api/cart/items { product_id, sku_id, quantity }`
+- 表: cart(id, user_id), cart_item(id, cart_id, product_id, sku_id, quantity)
+- 复用: F1 认证拦截器、F3 的 ProductDTO、SkuDTO
+<br>
+<span style="color:#888;">### Upstream Context</span> <span style="color:#888;">（自动从前序节点收集）</span>
+- upstream_models: F1→User, F3→Product, Sku
+- upstream_apis: F1→StpKit.getLoginId(), F3→ProductService.getById()
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>为什么比纯 YAML 好？</h3>
+  <table style="width:100%;font-size:12px;border-collapse:collapse;">
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px;">📊 <strong>Mermaid DAG</strong></td>
+      <td style="padding:8px;">GitHub/GitLab 直接渲染成可视化的依赖关系图，人类一眼看懂</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px;">📝 <strong>Markdown 文本</strong></td>
+      <td style="padding:8px;">Agent 读取 Markdown 原生解析，不需要 YAML parser。章节 + 字段清晰</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px;">🔗 <strong>锚点链接</strong></td>
+      <td style="padding:8px;">{#F1} 让 Coder 跳转到任意节点的完整上下文，Agent 也可以用锚点定位</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;">📦 <strong>单文件</strong></td>
+      <td style="padding:8px;">PRD 可以和 Feature Map 合并为一个文件，或独立存放，灵活</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>最终文件结构确认</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:12px;font-family:monospace;font-size:12px;">
+agents/pm/<br>
+├── README.md                  ← PM Agent 行为定义<br>
+├── conversation-guide.md      ← 3 阶段对话流程 + 检查清单<br>
+├── prd-template.md            ← 模块化 PRD 模板<br>
+└── feature-map-guide.md       ← Feature Map 构建指南<br>
+    ├── Mermaid DAG 语法<br>
+    ├── 节点 3 层上下文模板<br>
+    └── upstream_context 收集规则
+      </div>
+  </div>
+  <p style="margin-top:12px;">PM Agent 的输出物：<strong>PRD.md</strong> + <strong>feature-map.md</strong>（含 Mermaid DAG + 节点详情）+ <strong>GitHub Issues</strong></p>
+</div>
+
+<div class="section">
+  <h3>这样可以吗？</h3>
+  <div class="options">
+    <div class="option" data-choice="approve-mermaid" onclick="toggleSelect(this)">
+      <div class="letter">✅</div>
+      <div class="content"><h4>可以，写设计文档</h4></div>
+    </div>
+    <div class="option" data-choice="revise-mermaid" onclick="toggleSelect(this)">
+      <div class="letter">🔧</div>
+      <div class="content"><h4>还要调整</h4></div>
+    </div>
+  </div>
+</div>

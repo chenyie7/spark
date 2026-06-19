@@ -1,0 +1,135 @@
+<h2>PM Agent 最终设计（含 DAG Feature Map）</h2>
+<p class="subtitle">融合 EvoDev 的 DAG 机制，所有决策汇总</p>
+
+<div class="section">
+  <h3>📐 全流程架构</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:16px;">
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:12px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;">
+          <div style="background:var(--yellow);color:#000;padding:8px 12px;border-radius:6px;"><strong>🧑‍💼 人类 PM</strong></div>
+          <span>→</span>
+          <div style="background:#ff9800;color:#000;padding:8px 12px;border-radius:6px;"><strong>🤖 PM Agent</strong><br><small>3 阶段混合对话</small></div>
+          <span>→</span>
+          <div style="background:var(--green);color:#000;padding:8px 12px;border-radius:6px;">📋 PRD.md</div>
+          <span>+</span>
+          <div style="background:#e91e63;color:#fff;padding:8px 12px;border-radius:6px;">🗺️ Feature Map<br><small>DAG + 3层上下文</small></div>
+          <span>+</span>
+          <div style="background:var(--green);color:#000;padding:8px 12px;border-radius:6px;">📝 Issues</div>
+        </div>
+        <div style="text-align:center;color:var(--sub);">↓</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;">
+          <div style="background:var(--blue);color:#fff;padding:8px 12px;border-radius:6px;">💻 Coder<br><small>读FeatureMap→技术规划→按拓扑序编码</small></div>
+          <span>→</span>
+          <div style="background:var(--purple);color:#fff;padding:8px 12px;border-radius:6px;">🔍 Reviewer</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🗺️ Feature Map DAG 设计（核心新增）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:14px;font-size:12px;font-family:monospace;">
+      <div style="background:#2d2d2d;color:#e0e0e0;padding:14px;border-radius:8px;">
+<span style="color:#888;"># feature-map.yml — PM Agent 的核心输出之一</span>
+<span style="color:#888;"># 由 PM Agent 在对话阶段 3 自动生成</span>
+<br>
+<span style="color:#ff9800;">features:</span>
+  <span style="color:#ff9800;">- id:</span> F1
+    <span style="color:#ff9800;">name:</span> "用户注册登录"
+    <span style="color:#ff9800;">depends_on:</span> []
+    <span style="color:#ff9800;">priority:</span> P0
+    <span style="color:#ff9800;">issue:</span> "#1"
+    <br>
+    <span style="color:#4caf50;">business_layer:</span> |
+      用户可通过手机号+验证码注册/登录。
+      首次注册后自动创建用户档案。
+      支持 Token 自动续期。
+    <span style="color:#2196f3;">design_layer:</span> |
+      API: POST /api/auth/send-code, POST /api/auth/login
+      数据表: user(id, phone, nickname, created_at)
+      DTO: SendCodeDTO, LoginDTO, LoginVO
+      复用: Result&lt;T&gt; 统一返回体
+    <span style="color:#e91e63;">impl_layer:</span> |
+      <span style="color:#888;"># 开发完成后由 Coder 回填</span>
+      changed_files: []
+      exported_apis: []
+      exported_models: []
+<br>
+  <span style="color:#ff9800;">- id:</span> F3
+    <span style="color:#ff9800;">name:</span> "商品详情"
+    <span style="color:#ff9800;">depends_on:</span> ["F1"]
+    <span style="color:#ff9800;">priority:</span> P0
+    <span style="color:#ff9800;">issue:</span> "#3"
+    <br>
+    <span style="color:#4caf50;">business_layer:</span> |
+      展示商品图片、价格、规格、库存。
+      支持规格选择（颜色/尺寸）。
+    <span style="color:#2196f3;">design_layer:</span> |
+      API: GET /api/products/{id}, GET /api/products/{id}/skus
+      表: product(id, name, images, base_price, ...), sku(id, product_id, ...)
+      复用: F1 的认证拦截器、Result&lt;T&gt;
+    <span style="color:#e91e63;">impl_layer:</span> |
+      changed_files: []
+      exported_apis: []
+      exported_models: []
+      upstream_context: |
+        upstream_models:
+          - F1: User.java (可获取当前用户信息)
+        upstream_services:
+          - F1: StpKit.getLoginId() (获取登录用户ID)
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📂 仓库结构（最终）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:12px;font-family:monospace;font-size:12px;">
+agents/<br>
+├── <strong style="color:#ff9800;">pm/</strong>                        ← 新增：PM Agent<br>
+│   ├── README.md                ← 行为定义入口<br>
+│   ├── conversation-guide.md    ← 3阶段对话流程 + 自适应检查清单<br>
+│   ├── prd-template.md          ← 模块化 PRD 模板（必填+条件+可选）<br>
+│   └── feature-map-guide.md     ← Feature Map DAG 构建指南<br>
+│       ├── 节点3层上下文规范<br>
+│       ├── 依赖关系建模规则<br>
+│       └── feature-map.yml 格式定义<br>
+├── coder/                       ← 已有（需增强）<br>
+│   └── ...                      ← 增加：读 Feature Map、拓扑排序、上下文注入<br>
+└── reviewer/                    ← 已有<br>
+      </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📋 全部决策清单</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <tr><td style="padding:6px;">对话模式</td><td style="padding:6px;"><strong>混合三阶段</strong>（开放探索→草稿→定稿）</td></tr>
+    <tr><td style="padding:6px;">流控</td><td style="padding:6px;"><strong>自适应检查清单 + 人工确认门控</strong></td></tr>
+    <tr><td style="padding:6px;">PRD 模板</td><td style="padding:6px;"><strong>模块化</strong>（核心必填 + 条件模块 + 可选）</td></tr>
+    <tr><td style="padding:6px;">Feature Map</td><td style="padding:6px;"><strong>独立 DAG 文件</strong>（feature-map.yml），每个节点 3 层上下文</td></tr>
+    <tr><td style="padding:6px;">Issue 拆分</td><td style="padding:6px;"><strong>按功能点</strong>（一对应用户故事），含 PRD 引用 + 技术提示 + 依赖</td></tr>
+    <tr><td style="padding:6px;">上下文传播</td><td style="padding:6px;"><strong>DAG 边自动传递</strong>上游 business + design + code 到下游节点</td></tr>
+    <tr><td style="padding:6px;">实现回填</td><td style="padding:6px;"><strong>Coder 完成开发后回填 impl_layer</strong>（changed_files, exported_apis, exported_models）</td></tr>
+    <tr><td style="padding:6px;">技术规划</td><td style="padding:6px;"><strong>Coder 开发前先做技术规划</strong>，人工确认后编码</td></tr>
+    <tr><td style="padding:6px;">未来扩展</td><td style="padding:6px;">保留 PM→Analyst→Coder→Reviewer 完整链路</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>确认最终设计</h3>
+  <div class="options">
+    <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+      <div class="letter">✅</div>
+      <div class="content"><h4>确认，写设计文档</h4></div>
+    </div>
+    <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+      <div class="letter">🔧</div>
+      <div class="content"><h4>还需要调整</h4></div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,41 @@
+<h2>PM Agent 怎么和人类 PM 对话？</h2>
+<p class="subtitle">这是你提到的"最难的部分"——把模糊需求变成结构化 PRD 的对话过程</p>
+
+<div class="section">
+  <h3>三种对话模式</h3>
+  <div class="options">
+    <div class="option" data-choice="interview" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>问答式访谈</h3>
+        <p>Agent 拿到初始需求后，按固定模板逐项提问：目标用户？核心流程？边界条件？权限模型？<br>一问一答，填完模板即出 PRD</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>优点</h4><ul><li>结构化，不漏项</li><li>实现简单</li></ul></div>
+          <div class="cons"><h4>缺点</h4><ul><li>机械化，体验差</li><li>对复杂需求不够灵活</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="option" data-choice="collaborative" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>协作式打磨</h3>
+        <p>Agent 先输出一份草稿 PRD，人类 PM 在上面批注/修改，Agent 不断迭代完善。<br>像两个人一起编辑文档</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>优点</h4><ul><li>人类有掌控感</li><li>适合复杂需求</li></ul></div>
+          <div class="cons"><h4>缺点</h4><ul><li>轮次可能很多</li><li>对 Agent 理解修改意图的能力要求高</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>混合模式（先聊后写）</h3>
+        <p>第一阶段：开放式对话，Agent 理解需求全貌<br>第二阶段：Agent 输出结构化 PRD 草稿<br>第三阶段：人类确认/修改，Agent 最终定稿</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>优点</h4><ul><li>兼顾灵活和结构化</li><li>最适合真实场景</li></ul></div>
+          <div class="cons"><h4>缺点</h4><ul><li>实现最复杂</li><li>需要设计对话结束条件</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
