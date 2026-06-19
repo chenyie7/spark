@@ -151,7 +151,6 @@ class TestConclusion:
                             blocking_strategy=BlockingStrategy.STRICT, passed=True)
         summary = ScanSummary(total_checks=25, passed=25, failed=[])
         pre_result = ScanResult(metadata=meta, file_reports=[], summary=summary)
-        pre_result.metadata.passed = True
         ai_meta = ReviewMetadata(module="test", precheck_passed=True)
         ai_summary = ReviewSummary(total=21, pass_=21, fail=0, na=0)
         ai_result = ReviewResult(metadata=ai_meta, items=[], summary=ai_summary)

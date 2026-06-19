@@ -18,14 +18,18 @@ from scripts.code_check.models import (
 # ── Icon helpers ──────────────────────────────────────────────────
 
 
+_LEVEL_ICONS = {Level.P0: "🔴", Level.P1: "🟡", Level.P2: "🟢"}
+_RESULT_ICONS = {Result.PASS: "✅", Result.FAIL: "❌", Result.NA: "➖"}
+
+
 def level_icon(level: Level) -> str:
     """Return a coloured circle emoji for the given severity *level*."""
-    return {Level.P0: "\U0001f534", Level.P1: "\U0001f7e1", Level.P2: "\U0001f7e2"}[level]
+    return _LEVEL_ICONS.get(level, "")
 
 
 def result_icon(result: Result) -> str:
     """Return a status emoji for the given check *result*."""
-    return {Result.PASS: "✅", Result.FAIL: "❌", Result.NA: "➖"}[result]
+    return _RESULT_ICONS.get(result, "❓")
 
 
 # ── Section builders ─────────────────────────────────────────────
@@ -41,21 +45,21 @@ def build_metadata_block(
 
     status_icon = result_icon(Result.PASS) if meta.passed else result_icon(Result.FAIL)
     lines = [
-        "# 代码审查报告",  # 代码审查报告
+        "# 代码审查报告",
         "",
-        f"**模块**: {meta.module}",  # 模块
-        f"**扫描路径**: {scope.base_path}",  # 扫描路径
-        f"**文件数量**: {scope.file_count} 个文件",  # 文件数量 ... 个文件
-        f"**阻断策略**: {meta.blocking_strategy.value}",  # 阻断策略
-        f"**扫描时间**: {meta.timestamp}",  # 扫描时间
-        f"**状态**: {status_icon}",  # 状态
+        f"**模块**: {meta.module}",
+        f"**扫描路径**: {scope.base_path}",
+        f"**文件数量**: {scope.file_count} 个文件",
+        f"**阻断策略**: {meta.blocking_strategy.value}",
+        f"**扫描时间**: {meta.timestamp}",
+        f"**状态**: {status_icon}",
     ]
 
     if scope.breakdown:
         breakdown_str = ", ".join(
             f"{k}: {v}" for k, v in scope.breakdown.items()
         )
-        lines.append(f"**文件构成**: {breakdown_str}")  # 文件构成
+        lines.append(f"**文件构成**: {breakdown_str}")
 
     return "\n".join(lines)
 
