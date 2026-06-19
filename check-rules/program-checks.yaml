@@ -1,0 +1,100 @@
+# 程序检查规则 —— 确定性的"有没有"问题，零 AI 参与
+# 每个检查项从 reviewer 规范文件（quality-check.md 等）中提取
+
+# ═══════════════════════════════════════════════════════════════
+# JSR 303 参数校验
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-29:
+  description: "Controller 方法的 DTO 参数是否加了 @Validated 或 @Valid"
+  level: P1
+  program:
+    scanner: java-annotation
+    on_class: "RestController|Controller"
+    target: method_param
+    match_param_type: "DTO|Request|Command|Form"
+    missing_annotation: "@Validated|@Valid"
+  message: "{method} 缺少 @Validated/@Valid 注解 DTO 参数"
+
+# ═══════════════════════════════════════════════════════════════
+# Result 返回体
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-13:
+  description: "Controller 返回值是否用 Result<T> 包裹"
+  level: P1
+  program:
+    scanner: java-return-type
+    on_class: "RestController|Controller"
+    required_return_pattern: "Result<"
+  message: "{method} 返回值未使用 Result<T> 包裹"
+
+# ═══════════════════════════════════════════════════════════════
+# 日志规范
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-07:
+  description: "是否使用 System.out.println 或 System.err.println"
+  level: P1
+  program:
+    scanner: text-grep
+    pattern: "System\\.(out|err)\\.print"
+  message: "{method} 使用 System.out/err，应使用 @Slf4j log"
+
+BE-QL-08:
+  description: "需要日志的类是否加了 @Slf4j"
+  level: P2
+  program:
+    scanner: java-annotation
+    on_class: "Service|ServiceImpl|Controller|RestController|Component"
+    required_class_annotation: "@Slf4j"
+  message: "{class} 缺少 @Slf4j 注解"
+
+# ═══════════════════════════════════════════════════════════════
+# 代码风格
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-33:
+  description: "是否使用了禁止的 Lombok 注解"
+  level: P1
+  program:
+    scanner: text-grep
+    pattern: "@SneakyThrows|@Cleanup|@Synchronized"
+  message: "{class} 使用了禁止的 Lombok 注解"
+
+BE-QL-40:
+  description: "是否手动声明了 Logger 字段而未用 @Slf4j"
+  level: P2
+  program:
+    scanner: text-grep
+    pattern: "private\\s+(static\\s+)?final\\s+Logger"
+  message: "{class} 手动声明 Logger，应使用 @Slf4j"
+
+BE-QL-42:
+  description: "是否调用了 System.gc() / Runtime.gc()"
+  level: P2
+  program:
+    scanner: text-grep
+    pattern: "(System|Runtime)\\.gc\\(\\)"
+  message: "{method} 调用了 System.gc()，不应手动触发 GC"
+
+BE-QL-43:
+  description: "是否使用了 finalize() 方法"
+  level: P2
+  program:
+    scanner: text-grep
+    pattern: "protected\\s+void\\s+finalize\\(\\)"
+  message: "{class} 使用了 finalize()，JDK 已废弃"
+
+# ═══════════════════════════════════════════════════════════════
+# Mapper 专项
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-45:
+  description: "是否用字符串字段名构建 MyBatis-Plus 条件"
+  level: P1
+  program:
+    scanner: text-grep
+    pattern: "new\\s+QueryWrapper|new\\s+UpdateWrapper"
+    no_match_in_same_line: "Lambda"
+  message: "{method} 使用字符串字段名构建条件，应使用 LambdaQueryWrapper/LambdaUpdateWrapper"

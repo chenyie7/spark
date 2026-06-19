@@ -1,0 +1,100 @@
+# AI 检查清单 —— 需要语义理解的"对不对"问题
+# AI Review Agent 逐项确认，输出 review-result.json
+
+# ═══════════════════════════════════════════════════════════════
+# 异常处理
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-01:
+  description: "是否写了 throw new RuntimeException(\"自由文本\")"
+  level: P1
+  ai:
+    prompt_hint: "检查代码中是否直接抛出 new RuntimeException() 并传入自由文本，应使用 BusinessException(BusinessErrorEnum.XXX) 替代"
+
+BE-QL-02:
+  description: "业务异常是否使用 BusinessException(BusinessErrorEnum.XXX)"
+  level: P1
+  ai:
+    prompt_hint: "检查抛出的业务异常是否使用了 BusinessException 并传入了 BusinessErrorEnum 枚举值，而非直接 new BusinessException(\"文本\")"
+
+BE-QL-04:
+  description: "Controller 方法是否包裹了 try-catch"
+  level: P1
+  ai:
+    prompt_hint: "检查 Controller 方法中是否手写了 try-catch，应由 GlobalExceptionHandler 统一拦截异常，Controller 不应有 try-catch 块"
+
+BE-QL-05:
+  description: "Service 中 catch 异常后是否只打日志不抛出"
+  level: P1
+  ai:
+    prompt_hint: "检查 Service 层的 catch 块，确认 catch 后是否只记录了日志但没有向上抛出异常。如果异常被吞掉，上层调用者无法感知错误"
+
+# ═══════════════════════════════════════════════════════════════
+# 日志质量
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-11:
+  description: "log.info 是否包含关键业务信息（如 orderId、userId）"
+  level: P2
+  ai:
+    prompt_hint: "检查每个 log.info/log.warn 语句是否包含了当前操作的关键业务标识（如订单号、用户ID、商品ID等），而非仅打印静态文本。例如 log.info(\"创建成功\") 不通过，log.info(\"用户创建成功, userId={}\", userId) 通过"
+
+BE-QL-12:
+  description: "循环内是否有大量 log.info"
+  level: P2
+  ai:
+    prompt_hint: "检查是否存在在 for/while 循环体内调用 log.info 的代码，循环内大量打印日志会影响性能"
+
+# ═══════════════════════════════════════════════════════════════
+# Result 返回体
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-14:
+  description: "是否返回了裸的 String、boolean、Map 或 JSONObject"
+  level: P1
+  ai:
+    prompt_hint: "检查 Controller 方法是否直接返回了 String、boolean、Map、JSONObject 等裸类型，应使用 Result<T> 包裹或定义 VO 返回"
+
+# ═══════════════════════════════════════════════════════════════
+# 代码风格
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-34:
+  description: "工具类是否 final + 私有构造 + 全部 static 方法"
+  level: P2
+  ai:
+    prompt_hint: "检查工具类（类名以 Util/Utils/Helper 结尾的类）是否声明为 final、是否有私有构造函数、所有方法是否都是 static"
+
+BE-QL-35:
+  description: "集合返回值是否可能为 null"
+  level: P1
+  ai:
+    prompt_hint: "检查返回 List、Set、Map 等集合类型的方法，确保返回值不会为 null。方法应该返回空集合 new ArrayList<>() 或 Collections.emptyList() 而非 null"
+
+BE-QL-36:
+  description: "跨文件出现 2 次及以上的字符串/数字是否提取为常量"
+  level: P2
+  ai:
+    prompt_hint: "检查代码中是否有相同的字符串字面量或魔法数字在多个地方出现（>=2次），这些应该提取为常量类中定义"
+
+BE-QL-37:
+  description: "有固定范围的状态/角色是否用了枚举而非字符串常量"
+  level: P2
+  ai:
+    prompt_hint: "检查表示状态、类型、角色的字段是否使用了字符串常量（如 \"active\"/\"disabled\"），应定义枚举类替代字符串常量"
+
+BE-QL-41:
+  description: "是否存在魔法数字"
+  level: P2
+  ai:
+    prompt_hint: "检查代码中是否存在未命名的魔法数字（如 if (status == 1)），应使用枚举或常量替代数字字面量"
+
+# ═══════════════════════════════════════════════════════════════
+# Mapper 专项
+# ═══════════════════════════════════════════════════════════════
+
+BE-QL-46:
+  description: "循环内是否逐条查数据库"
+  level: P1
+  ai:
+    prompt_hint: "检查是否存在在 for/while 循环体内调用 Mapper 方法逐条查询或操作数据库的代码，应使用批量方法或一次性查询替代"
