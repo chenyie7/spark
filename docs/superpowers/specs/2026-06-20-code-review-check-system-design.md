@@ -408,20 +408,77 @@ Review Agent 输出 JSON 时必须遵守：
 
 ## 九、CLI 接口设计
 
-所有 CLI 命令以 `code-check` 为入口：
+所有 CLI 命令以 `code-check` 为入口，配置有三级优先级：
+
+```
+命令行参数  >  配置文件  >  内置默认值
+```
+
+### 简化使用
+
+```bash
+# 有配置文件时，最简用法：
+code-check scan src/main/java/com/example/user
+
+# 等价于完整写法（无需手写长串参数）：
+code-check scan src/main/java/com/example/user \
+  --rules-dir check-rules/ \
+  --strategy strict \
+  --format json \
+  --output ./review-output/
+```
+
+### 命令
 
 ```
 code-check scan <path> [options]
-  --rules-dir     check-rules/ 目录路径
-  --strategy      strict|normal|loose (默认 strict)
-  --format        json|md
-  --output        输出文件路径
+  --rules-dir     规则目录路径（默认: check-rules/）
+  --strategy      strict|normal|loose（默认: strict）
+  --format        json|md（默认: json）
+  --output        输出目录路径（默认: ./review-output/）
+  --config        配置文件路径（默认: .code-check-config.yaml）
 
 code-check report [options]
   --pre           程序预检 JSON 路径
   --ai            AI 检查 JSON 路径
   --output        输出 Markdown 路径
+  --config        配置文件路径（默认: .code-check-config.yaml）
 ```
+
+### CLI 配置文件（.code-check-config.yaml）
+
+放在项目根目录，命令行参数为空时自动读取默认值：
+
+```yaml
+# code-check 配置文件 —— 放在项目根目录
+
+# 检查规则目录
+rules_dir: check-rules/
+
+# 阻断策略：strict | normal | loose
+strategy: strict
+
+# 输出目录
+output_dir: ./review-output/
+
+# 输出格式（scan 命令默认输出）：json | md
+format: json
+
+# 扫描排除目录
+exclude:
+  - "**/test/**"
+  - "**/target/**"
+  - "**/node_modules/**"
+
+# 默认扫描路径（不传 path 参数时使用）
+# default_path: src/main/java/
+```
+
+**工作方式：**
+1. CLI 启动先读 `.code-check-config.yaml`（如果存在）
+2. 用户传了命令行参数 → 覆盖配置文件的对应值
+3. 都没传 → 使用内置默认值
+4. Hook 调用时只需 `code-check scan <path>`，配置自动生效
 
 ---
 
@@ -429,6 +486,7 @@ code-check report [options]
 
 | 文件 | 类型 | 说明 |
 |------|------|------|
+| `.code-check-config.yaml` | 配置 | CLI 默认配置文件，简化日常使用，避免重复传参 |
 | `check-rules/program-checks.yaml` | 配置 | 程序检查规则定义，从 reviewer 规范提取可机械化检查的项 |
 | `check-rules/ai-checklist.yaml` | 配置 | AI 检查清单模板，从 reviewer 规范提取需语义理解的项 |
 | `scripts/code_check/__init__.py` | Python | CLI 包入口 |
