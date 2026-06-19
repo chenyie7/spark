@@ -1,7 +1,6 @@
 """Shared fixtures for code-check tests."""
 
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture
@@ -18,7 +17,7 @@ def sample_config_dict():
 
 @pytest.fixture
 def tmp_project(tmp_path):
-    """Create a temporary project structure with config and Java files."""
+    """Create a temporary project structure with config and rule files."""
     project = tmp_path / "test-project"
     project.mkdir()
 
