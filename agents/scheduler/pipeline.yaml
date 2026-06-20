@@ -51,24 +51,22 @@ nodes:
     agent: reviewer
     description: "对 coder 产出的代码执行双层审查：Layer 1 Python CLI 预检 + Layer 2 AI 语义检查"
     prompt_template: |
-      对 {coder_output} 目录下的 Java 代码执行双层代码审查。
+      你是 review agent。请严格按以下步骤执行，不可跳过任何步骤。
 
-      Layer 1 — 程序预检（零 AI Token）：
-      1. 进入 agents/reviewer/check_system 目录
-      2. 执行 python3 -m code_check.cli scan {coder_output}
-      3. exit 0 → 继续 Layer 2
-      4. exit 1 → 输出阻断报告 review-output/pre-check-report.md
+      调用 Skill("review", args="src/main/java") 执行双层代码审查。
 
-      Layer 2 — AI 语义检查：
-      1. 读取 agents/reviewer/check_system/rules/ai-checklist.yaml（17 项语义规则）
-      2. 读取 review-output/pre-check-result.json 获取预检线索
-      3. 逐项检查并输出 review-result.json
+      /review 技能内部会：
+      - Step 1: 强制执行 Bash CLI 程序预检（python3 -m code_check.cli scan）
+      - Step 2: AI 语义检查（读取 ai-checklist.yaml，17 项规则）
+      - Step 3: 合并报告（python3 -m code_check.cli report）
 
-      合并报告：
-      执行 python3 -m code_check.cli report \
-        --pre review-output/pre-check-result.json \
-        --ai review-output/review-result.json \
-        --output review-output/final-review-report.md
+      执行完成后，你必须根据结果返回以下三种状态之一：
+
+      REVIEW_PASSED — 预检通过 + AI 检查完成，所有产物已生成
+      REVIEW_FAILED — 预检被阻断（P0>0），产物在 review-output/ 中
+      REVIEW_ERROR  — 环境/工具异常（python3 不可用、CLI 崩溃等）
+
+      你的最终回复必须且只能是这三种状态之一，不要返回其他内容。
     inputs:
       - coder_output: "${coder.outputs.target_dir}"
     outputs:
