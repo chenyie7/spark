@@ -63,6 +63,8 @@ def _any_match(items: list[str], pattern: str) -> bool:
     """Return True if any *item* matches the pipe-separated *pattern*.
 
     Supports both glob patterns (``*Entity``) and regex/substring patterns.
+    Invalid regex patterns (e.g. unbalanced parentheses) are silently skipped
+    to prevent crashing the entire scan.
     """
     for pat in pattern.split("|"):
         pat = pat.strip()
@@ -72,8 +74,14 @@ def _any_match(items: list[str], pattern: str) -> bool:
             if "*" in pat or "?" in pat:
                 if fnmatch.fnmatch(item, pat):
                     return True
-            elif re.search(pat, item):
-                return True
+            else:
+                try:
+                    if re.search(pat, item):
+                        return True
+                except re.error:
+                    # Skip invalid regex fragments (e.g. from patterns like
+                    # ".*(Constant|Constants|Code|Codes)" split on |)
+                    pass
     return False
 
 
@@ -82,6 +90,8 @@ def _class_name_matches(class_name: str, on_class: str) -> bool:
 
     Supports both glob patterns (e.g. ``*Entity``) and regex/substring
     patterns (e.g. ``RestController``).
+
+    Invalid regex patterns are silently skipped.
     """
     if not class_name:
         return False
@@ -94,8 +104,14 @@ def _class_name_matches(class_name: str, on_class: str) -> bool:
             if fnmatch.fnmatch(class_name, pat):
                 return True
         # Regex/substring patterns → re.search
-        elif re.search(pat, class_name):
-            return True
+        else:
+            try:
+                if re.search(pat, class_name):
+                    return True
+            except re.error:
+                # Skip invalid regex fragments (e.g. "Codes)" from
+                # ".*(Constant|Constants|Code|Codes)" split on |)
+                pass
     return False
 
 
@@ -131,7 +147,11 @@ def _matches_on_dir(file_path: Path, on_dir: str) -> bool:
         if not pat:
             continue
         for part in parts:
-            if fnmatch.fnmatch(part, pat) or re.search(pat, part):
+            # Exact match: use fnmatch for glob patterns, fullmatch for regex
+            if "*" in pat or "?" in pat:
+                if fnmatch.fnmatch(part, pat):
+                    return True
+            elif re.fullmatch(pat, part):
                 return True
     return False
 
@@ -139,6 +159,49 @@ def _matches_on_dir(file_path: Path, on_dir: str) -> bool:
 def _has_annotation(content: str, annotation_pattern: str) -> bool:
     """Return True if *annotation_pattern* is found anywhere in *content*."""
     return bool(re.search(rf"\b{annotation_pattern}\b", content))
+
+
+def _has_class_modifier(content: str, modifier: str) -> bool:
+    """Check if the class/interface declaration includes *modifier* (e.g. ``final``).
+
+    Example: ``public final class FooConstants`` → True for ``final``.
+    """
+    m = re.search(
+        r"(?:public\s+|private\s+|protected\s+)?"
+        r"(?:abstract\s+)?(?:static\s+)?"
+        rf"(?:{modifier}\s+)?"
+        r"(?:class|@interface|interface)\s+\w+",
+        content,
+    )
+    if not m:
+        return False
+    # Check that *modifier* actually appears before the class keyword
+    return bool(re.search(rf"\b{modifier}\b", content[: m.end()]))
+
+
+def _has_private_constructor(content: str) -> bool:
+    """Check if the Java source contains a private constructor."""
+    clean = _strip_comments_preserve_lines(content)
+    return bool(re.search(r"private\s+\w+\s*\([^)]*\)\s*\{", clean))
+
+
+def _param_has_validated_with_group(params_str: str, param_name: str) -> bool:
+    """Check if a parameter named *param_name* has ``@Validated(SomeGroup.class)``.
+
+    Returns True if the ``@Validated`` annotation on the parameter includes
+    a group argument (e.g. ``@Validated(Create.class)``).  A bare
+    ``@Validated`` without a group is ignored by Spring validation, so this
+    check helps catch misconfigured validation annotations.
+    """
+    # Find the parameter segment in params_str
+    for seg in params_str.split(","):
+        seg = seg.strip()
+        if param_name in seg:
+            # Check if @Validated has a parenthesized group argument
+            if re.search(r"@Validated\s*\([^)]+\)", seg):
+                return True
+            break
+    return False
 
 
 def _parse_params(params_str: str) -> list[dict]:
@@ -163,17 +226,35 @@ def _parse_params(params_str: str) -> list[dict]:
     return params
 
 
+def _strip_comments_preserve_lines(text: str) -> str:
+    """Replace comments with newlines so that line numbering stays accurate.
+
+    Block comments (``/* ... */``) are replaced with the same number of
+    newlines they contain.  Line comments (``// ...``) are replaced with
+    empty strings (they don't change line count).
+    """
+    # Block comments: replace with newlines to preserve line count
+    result = re.sub(
+        r"/\*.*?\*/",
+        lambda m: "\n" * m.group(0).count("\n"),
+        text,
+        flags=re.DOTALL,
+    )
+    # Line comments: just remove the comment text, keep the newline
+    result = re.sub(r"//[^\n]*", "", result)
+    return result
+
+
 def _find_methods(content: str) -> list[dict]:
     """Find all method declarations in Java source with their metadata.
 
     Returns a list of dicts with keys:
         name, return_type, params (structured), params_str, line_num, annotations.
-    Block-comments and line-comments are stripped before matching.
+    Comments are replaced with newlines to preserve accurate line numbering.
     Handles both regular methods (ending with ``{``) and interface/abstract
     methods (ending with ``;``).
     """
-    clean = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
-    clean = re.sub(r"//[^\n]*", "", clean)
+    clean = _strip_comments_preserve_lines(content)
 
     methods: list[dict] = []
     # Match both regular methods ({) and abstract/interface methods (;)
@@ -182,6 +263,7 @@ def _find_methods(content: str) -> list[dict]:
     # (e.g. "return new UserVO();" would otherwise match as a method).
     pattern = (
         r"((?:@\w+(?:\([^)]*\))?\s*)*)"  # method annotations
+        r"\s*"                             # consume leading whitespace
         r"(?:(?:public|private|protected)\s+)?"
         r"(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:abstract\s+)?(?:default\s+)?"
         r"([\w<>,?\[\]\s]+?)\s+"
@@ -217,7 +299,7 @@ def _find_methods(content: str) -> list[dict]:
                 "name": method_name,
                 "params_str": m.group(4),
                 "params": _parse_params(m.group(4)),
-                "line_num": content[: m.start()].count("\n") + 1,
+                "line_num": clean[: m.start()].count("\n") + 1,  # use clean for accurate line numbers
                 "annotations": method_annotations,
             }
         )
@@ -229,9 +311,9 @@ def _get_fields(content: str) -> list[dict]:
 
     Returns a list of dicts with keys:
         name, type, annotations, line_num.
+    Comments are replaced with newlines to preserve accurate line numbering.
     """
-    clean = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
-    clean = re.sub(r"//[^\n]*", "", clean)
+    clean = _strip_comments_preserve_lines(content)
 
     fields: list[dict] = []
     # Match: [annotations] [modifiers] Type name [= value];
@@ -252,7 +334,7 @@ def _get_fields(content: str) -> list[dict]:
                 "type": m.group(2).strip(),
                 "name": m.group(3),
                 "annotations": field_annotations,
-                "line_num": content[: m.start()].count("\n") + 1,
+                "line_num": clean[: m.start()].count("\n") + 1,  # use clean for accurate line numbers
             }
         )
     return fields
@@ -495,6 +577,40 @@ class JavaAnnotationScanner(BaseScanner):
                         )
                     )
 
+            # ── required_class_modifier ── (BE-QL-38: final class)
+            if "required_class_modifier" in program:
+                modifier = program["required_class_modifier"]
+                # Check class declaration has the modifier
+                if not _has_class_modifier(content, modifier):
+                    findings.append(
+                        Finding(
+                            code=code,
+                            level=level,
+                            line=0,
+                            message=_safe_format(
+                                msg_template,
+                                {"class": class_name, "class_": class_name, "method": ""},
+                            ),
+                            evidence=f"类缺少 {modifier} 修饰符",
+                        )
+                    )
+
+            # ── required_private_constructor ── (BE-QL-38: private constructor)
+            if program.get("required_private_constructor"):
+                if not _has_private_constructor(content):
+                    findings.append(
+                        Finding(
+                            code=code,
+                            level=level,
+                            line=0,
+                            message=_safe_format(
+                                msg_template,
+                                {"class": class_name, "class_": class_name, "method": ""},
+                            ),
+                            evidence="类缺少私有构造器",
+                        )
+                    )
+
             # ── required_field_annotation ──
             if "required_field_annotation" in program:
                 needed = program["required_field_annotation"]
@@ -670,6 +786,16 @@ class JavaAnnotationScanner(BaseScanner):
                     if not any(match_ann_regex.search(a) for a in param_anns):
                         continue
 
+                # ── check_group_present: @Validated should have group ──
+                if program.get("check_group_present"):
+                    # Re-extract annotations from the original params_str to get
+                    # full annotation text including group params
+                    has_validated_with_group = _param_has_validated_with_group(
+                        method["params_str"], param["name"]
+                    )
+                    if has_validated_with_group:
+                        continue  # OK, has group
+
                 has_required_ann = False
                 if ann_regex:
                     for ann in param["annotations"]:
@@ -691,7 +817,7 @@ class JavaAnnotationScanner(BaseScanner):
                                     "param": f"{param['type']} {param['name']}",
                                 },
                             ),
-                            evidence=f"参数 {param['type']} {param['name']} 缺少 {missing_annotation}",
+                            evidence=f"参数 {param['type']} {param['name']} 的 @Validated 未指定分组",
                             method=method["name"],
                         )
                     )
@@ -823,8 +949,8 @@ class PackageStructureScanner(BaseScanner):
                             )
                         )
 
-                # Check service/impl
-                if program.get("required_service_impl"):
+                # Check service/impl (required_service_impl or check_impl_subdir)
+                if program.get("required_service_impl") or program.get("check_impl_subdir"):
                     if "service" in subdirs:
                         service_sub = {
                             d.name: d
@@ -841,7 +967,8 @@ class PackageStructureScanner(BaseScanner):
                                     evidence=f"缺少 service/impl 子包 (路径: {subdirs['service']})",
                                 )
                             )
-                    else:
+                    elif program.get("required_service_impl"):
+                        # Only report missing service/ if impl was explicitly required
                         findings.append(
                             Finding(
                                 code=code,
@@ -851,25 +978,6 @@ class PackageStructureScanner(BaseScanner):
                                 evidence=f"缺少 service/ 子包 (路径: {pkg_dir})",
                             )
                         )
-
-                # check_impl_subdir
-                if program.get("check_impl_subdir"):
-                    if "service" in subdirs:
-                        service_sub = {
-                            d.name: d
-                            for d in subdirs["service"].iterdir()
-                            if d.is_dir()
-                        }
-                        if "impl" not in service_sub:
-                            findings.append(
-                                Finding(
-                                    code=code,
-                                    level=level,
-                                    line=0,
-                                    message=msg,
-                                    evidence=f"缺少 service/impl 子包 (路径: {subdirs['service']})",
-                                )
-                            )
 
         return findings
 
@@ -1048,11 +1156,13 @@ class ConfigCheckScanner(BaseScanner):
         # config-check is directory-level; handled in scan_directory()
         return []
 
-    def scan_directory(self, base_path: Path, rules: dict) -> list[Finding]:
+    def scan_directory(self, base_path: Path, rules: dict, exclude_patterns: list[str] | None = None) -> list[Finding]:
         findings: list[Finding] = []
         my_rules = self._rules_for_scanner(rules, self.scanner_name)
         if not my_rules:
             return findings
+
+        excludes = exclude_patterns or []
 
         for code, rule in my_rules.items():
             program = rule["program"]
@@ -1072,12 +1182,16 @@ class ConfigCheckScanner(BaseScanner):
                     if not match.is_file():
                         continue
 
-                    # Exclude specific files
-                    if exclude_file and fnmatch.fnmatch(match.name, exclude_file):
+                    # Apply exclude patterns (same as Java files)
+                    if should_exclude(str(match), excludes):
                         continue
 
-                    # Skip hidden dirs
-                    if any(p.startswith(".") for p in match.parts):
+                    # Skip hidden dirs and node_modules
+                    if any(p.startswith(".") or p == "node_modules" for p in match.parts):
+                        continue
+
+                    # Exclude specific files
+                    if exclude_file and fnmatch.fnmatch(match.name, exclude_file):
                         continue
 
                     try:
@@ -1101,9 +1215,26 @@ class ConfigCheckScanner(BaseScanner):
                                         evidence=f"{match.name}:{lineno}: {line.strip()[:120]}",
                                     )
                                 )
+
+                        # Also check multi-line for nested YAML patterns
+                        # (e.g. "knife4j:\n  enable: true" vs "knife4j.enable: true")
+                        nested_lineno = _find_nested_yaml(content, program["pattern"])
+                        if nested_lineno:
+                            findings.append(
+                                Finding(
+                                    code=code,
+                                    level=level,
+                                    line=nested_lineno,
+                                    message=msg,
+                                    evidence=f"{match.name}:{nested_lineno}: nested YAML match for {program['pattern']}",
+                                )
+                            )
                     else:
                         # Report if pattern is NOT found
                         found = any(regex.search(line) for line in lines)
+                        # Also check nested YAML
+                        if not found:
+                            found = _find_nested_yaml(content, program["pattern"]) is not None
                         if not found:
                             findings.append(
                                 Finding(
@@ -1118,7 +1249,49 @@ class ConfigCheckScanner(BaseScanner):
         return findings
 
 
-# ── Scanner Registry ───────────────────────────────────────────
+def _find_nested_yaml(content: str, flat_pattern: str) -> int | None:
+    """Check content for a nested YAML equivalent of *flat_pattern*.
+
+    For example, ``knife4j\\.enable\\s*:\\s*true`` also matches::
+
+        knife4j:
+          enable: true
+
+    Returns the line number (1-based) of the first nested match, or None.
+    """
+    # Only handle "parent.child: value" style patterns
+    m = re.match(r"(.+?)\\\.(.+?)\\s\*:\\s\*(.+)", flat_pattern)
+    if not m:
+        return None
+
+    parent = m.group(1)
+    child = m.group(2)
+    value = m.group(3)
+
+    lines = content.split("\n")
+    in_parent = False
+    parent_indent = 0
+
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        # Detect parent key at any indentation level
+        if re.match(rf"{parent}\s*:\s*$", stripped):
+            in_parent = True
+            parent_indent = indent
+            continue
+
+        # Detect child key inside parent block
+        if in_parent and indent > parent_indent:
+            if re.match(rf"{child}\s*:\s*{value}", stripped):
+                return lineno
+
+        # Reset if we're back to the parent's indent level or lower
+        if in_parent and indent <= parent_indent and stripped:
+            in_parent = False
+
+    return None
 
 SCANNERS: dict[str, BaseScanner] = {
     "text-grep": TextGrepScanner(),
@@ -1260,13 +1433,17 @@ def scan_single_file(file_path: Path, rules: dict) -> list[Finding]:
 # ── Directory-level Scan ───────────────────────────────────────
 
 
-def _run_directory_scanners(base_path: Path, rules: dict) -> list[Finding]:
+def _run_directory_scanners(base_path: Path, rules: dict, excludes: list[str] | None = None) -> list[Finding]:
     """Run directory-level scanners (package-structure, config-check)."""
     findings: list[Finding] = []
     for scanner_name in ("package-structure", "config-check"):
         scanner = SCANNERS.get(scanner_name)
         if scanner:
-            findings.extend(scanner.scan_directory(base_path, rules))
+            # ConfigCheckScanner accepts exclude patterns
+            if scanner_name == "config-check":
+                findings.extend(scanner.scan_directory(base_path, rules, excludes))
+            else:
+                findings.extend(scanner.scan_directory(base_path, rules))
     return findings
 
 
@@ -1347,7 +1524,7 @@ def scan_files(
         active_rules = rules
 
     # ── Phase 1: Directory-level scanners ──
-    dir_findings = _run_directory_scanners(base_path, active_rules)
+    dir_findings = _run_directory_scanners(base_path, active_rules, excludes)
 
     # ── Phase 2: Per-file scanners ──
     java_files = find_java_files(base_path, excludes)

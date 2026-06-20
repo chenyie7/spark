@@ -1214,3 +1214,465 @@ spring:
         }
         findings = ConfigCheckScanner().scan(f, rules)
         assert len(findings) == 0
+
+
+# ── P0-1: re.error crash fix ───────────────────────────────────
+
+from code_check.scanner import _on_class_matches, _any_match, _class_name_matches
+
+
+class TestReErrorCrashFix:
+    """P0-1: _any_match/_class_name_matches must not crash on invalid regex."""
+
+    def test_on_class_with_unbalanced_parens_does_not_crash(self):
+        """BE-QL-38 on_class with .*(Constant|Constants|Code|Codes) must not crash."""
+        # The pattern .*(Constant|Constants|Code|Codes) split by | produces
+        # "Codes)" which is an invalid regex (unbalanced paren).
+        # This must not raise re.error.
+        result = _on_class_matches(
+            ["Component"], "UserService",
+            ".*(Constant|Constants|Code|Codes)"
+        )
+        # Should not crash and should return False (UserService doesn't match)
+        assert result is False
+
+    def test_on_class_with_valid_pattern_still_works(self):
+        """Normal patterns should still match correctly after the fix."""
+        # "RestController|Controller" should match @RestController annotation
+        result = _on_class_matches(
+            ["RestController"], "UserController",
+            "RestController|Controller"
+        )
+        assert result is True
+
+    def test_class_name_matches_with_invalid_regex_does_not_crash(self):
+        """_class_name_matches must handle "Codes)" gracefully."""
+        result = _class_name_matches("UserService", ".*(Constant|Constants|Code|Codes)")
+        assert result is False
+
+    def test_class_name_matches_with_valid_pattern(self):
+        """_class_name_matches should still match valid patterns."""
+        result = _class_name_matches("UserMapper", "*Mapper")
+        assert result is True
+
+
+# ── P0-2: _find_methods line number accuracy ────────────────────
+
+JAVA_WITH_COMMENTS = """
+package com.example;
+
+/**
+ * Javadoc comment block
+ * that spans multiple lines
+ */
+public class TestService {
+
+    // Single line comment
+    public void doSomething() {
+        System.out.println("hello");
+    }
+
+    /*
+     * Multi-line block comment
+     */
+    public String getValue() {
+        return "value";
+    }
+}
+"""
+
+
+class TestFindMethodsLineNumbers:
+    """P0-2: _find_methods should return accurate line numbers."""
+
+    def test_method_line_numbers_are_accurate(self):
+        """Line numbers should be close to actual source positions."""
+        from code_check.scanner import _find_methods
+        methods = _find_methods(JAVA_WITH_COMMENTS)
+        assert len(methods) == 2
+        do_something = [m for m in methods if m["name"] == "doSomething"][0]
+        get_value = [m for m in methods if m["name"] == "getValue"][0]
+        # getValue must come after doSomething
+        assert get_value["line_num"] > do_something["line_num"]
+        # Line numbers should be reasonable (not wildly off)
+        assert do_something["line_num"] >= 7
+        assert get_value["line_num"] > 10
+
+    def test_return_type_does_not_include_modifier(self):
+        """P0-3: return_type should be just the type, not 'public Type'."""
+        from code_check.scanner import _find_methods
+        methods = _find_methods(JAVA_WITH_COMMENTS)
+        for m in methods:
+            # return_type should NOT start with "public", "private", "protected"
+            assert not m["return_type"].startswith("public")
+            assert not m["return_type"].startswith("private")
+            assert m["return_type"] in ("void", "String")
+
+
+# ── P0-4: check_group_present ───────────────────────────────────
+
+JAVA_WITH_VALIDATED_NO_GROUP = """
+package com.example.controller;
+
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.Valid;
+
+@RestController
+public class UserController {
+
+    @PostMapping
+    public Result createUser(@Validated CreateUserDTO dto) {
+        return Result.success();
+    }
+}
+"""
+
+JAVA_WITH_VALIDATED_WITH_GROUP = """
+package com.example.controller;
+
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.Valid;
+
+@RestController
+public class UserController {
+
+    @PostMapping
+    public Result createUser(@Validated(Create.class) CreateUserDTO dto) {
+        return Result.success();
+    }
+}
+"""
+
+
+class TestCheckGroupPresent:
+    """P0-4: BE-QL-30 check_group_present must detect @Validated without group."""
+
+    def test_validated_without_group_reports_finding(self, tmp_path):
+        """@Validated without group parameter should produce a finding."""
+        f = _temp_java_file(tmp_path, JAVA_WITH_VALIDATED_NO_GROUP)
+        rules = {
+            "BE-QL-30": {
+                "description": "@Validated 未指定分组",
+                "level": "P2",
+                "program": {
+                    "scanner": "java-annotation",
+                    "on_class": "RestController|Controller",
+                    "target": "method_param",
+                    "match_param_type": "DTO|Request|Command",
+                    "check_group_present": True,
+                },
+                "message": "{method} 的 @Validated 未指定分组",
+            }
+        }
+        findings = JavaAnnotationScanner().scan(f, rules)
+        assert len(findings) == 1
+        assert "未指定分组" in findings[0].evidence
+        assert findings[0].method == "createUser"
+
+    def test_validated_with_group_no_finding(self, tmp_path):
+        """@Validated(Create.class) should NOT produce a finding."""
+        f = _temp_java_file(tmp_path, JAVA_WITH_VALIDATED_WITH_GROUP)
+        rules = {
+            "BE-QL-30": {
+                "description": "@Validated 未指定分组",
+                "level": "P2",
+                "program": {
+                    "scanner": "java-annotation",
+                    "on_class": "RestController|Controller",
+                    "target": "method_param",
+                    "match_param_type": "DTO|Request|Command",
+                    "check_group_present": True,
+                },
+                "message": "{method} 的 @Validated 未指定分组",
+            }
+        }
+        findings = JavaAnnotationScanner().scan(f, rules)
+        assert len(findings) == 0
+
+
+# ── P0-5: required_class_modifier + required_private_constructor ─
+
+JAVA_CONSTANTS_WITHOUT_FINAL = """
+package com.example.constant;
+
+public class UserConstants {
+    public static final String DEFAULT_NAME = "unknown";
+    private UserConstants() {}
+}
+"""
+
+JAVA_CONSTANTS_WITHOUT_PRIVATE_CTOR = """
+package com.example.constant;
+
+public final class UserConstants {
+    public static final String DEFAULT_NAME = "unknown";
+    public UserConstants() {}
+}
+"""
+
+JAVA_CONSTANTS_CORRECT = """
+package com.example.constant;
+
+public final class UserConstants {
+    public static final String DEFAULT_NAME = "unknown";
+    private UserConstants() {}
+}
+"""
+
+
+class TestRequiredClassModifier:
+    """P0-5: BE-QL-38 required_class_modifier and required_private_constructor."""
+
+    def test_missing_final_modifier_reported(self, tmp_path):
+        """Class without final modifier should be reported."""
+        f = _temp_java_file(tmp_path, JAVA_CONSTANTS_WITHOUT_FINAL)
+        rules = {
+            "BE-QL-38": {
+                "description": "常量类应 final + 私有构造",
+                "level": "P2",
+                "program": {
+                    "scanner": "java-annotation",
+                    "on_class": "*Constants",
+                    "required_class_modifier": "final",
+                },
+                "message": "常量类应声明为 final + 私有构造",
+            }
+        }
+        findings = JavaAnnotationScanner().scan(f, rules)
+        assert len(findings) == 1
+        assert "final" in findings[0].evidence
+
+    def test_missing_private_constructor_reported(self, tmp_path):
+        """Class without private constructor should be reported."""
+        f = _temp_java_file(tmp_path, JAVA_CONSTANTS_WITHOUT_PRIVATE_CTOR)
+        rules = {
+            "BE-QL-38": {
+                "description": "常量类应 final + 私有构造",
+                "level": "P2",
+                "program": {
+                    "scanner": "java-annotation",
+                    "on_class": "*Constants",
+                    "required_private_constructor": True,
+                },
+                "message": "常量类应声明为 final + 私有构造",
+            }
+        }
+        findings = JavaAnnotationScanner().scan(f, rules)
+        assert len(findings) == 1
+        assert "私有构造" in findings[0].evidence
+
+    def test_correct_constants_class_no_findings(self, tmp_path):
+        """Correct final class with private constructor → no findings."""
+        f = _temp_java_file(tmp_path, JAVA_CONSTANTS_CORRECT)
+        rules = {
+            "BE-QL-38": {
+                "description": "常量类应 final + 私有构造",
+                "level": "P2",
+                "program": {
+                    "scanner": "java-annotation",
+                    "on_class": "*Constants",
+                    "required_class_modifier": "final",
+                    "required_private_constructor": True,
+                },
+                "message": "常量类应声明为 final + 私有构造",
+            }
+        }
+        findings = JavaAnnotationScanner().scan(f, rules)
+        assert len(findings) == 0
+
+
+# ── P0-6: nested YAML matching ──────────────────────────────────
+
+from code_check.scanner import _find_nested_yaml
+
+
+class TestNestedYamlMatching:
+    """P0-6: ConfigCheckScanner should handle nested YAML patterns."""
+
+    def test_nested_yaml_found(self):
+        """_find_nested_yaml should find knife4j.enable in nested format."""
+        content = """spring:
+  application:
+    name: myapp
+knife4j:
+  enable: true
+"""
+        lineno = _find_nested_yaml(
+            content, r"knife4j\.enable\s*:\s*true"
+        )
+        assert lineno is not None
+        assert lineno > 3
+
+    def test_nested_yaml_not_found(self):
+        """_find_nested_yaml returns None when nested pattern absent."""
+        content = """spring:
+  application:
+    name: myapp
+knife4j:
+  enable: false
+"""
+        lineno = _find_nested_yaml(
+            content, r"knife4j\.enable\s*:\s*true"
+        )
+        assert lineno is None
+
+    def test_flat_format_still_handled(self):
+        """The scanner handles flat format (this is not nested, so None)."""
+        content = """knife4j.enable: true"""
+        # Flat format is not detected by _find_nested_yaml (line-by-line handles it)
+        lineno = _find_nested_yaml(
+            content, r"knife4j\.enable\s*:\s*true"
+        )
+        assert lineno is None  # not in nested format
+
+    def test_config_scanner_detects_nested_yaml_must_not_match(self, tmp_path):
+        """ConfigCheckScanner should flag knife4j.enable=true in nested format."""
+        config_dir = tmp_path / "resources"
+        config_dir.mkdir()
+        app_yml = config_dir / "application-prod.yml"
+        app_yml.write_text("""spring:
+  datasource:
+    url: jdbc:mysql://localhost/db
+knife4j:
+  enable: true
+""")
+
+        rules = {
+            "BE-IN-07": {
+                "description": "生产环境 knife4j.enable 应为 false",
+                "level": "P1",
+                "program": {
+                    "scanner": "config-check",
+                    "file_pattern": "*.yml|*.yaml",
+                    "pattern": r"knife4j\.enable\s*:\s*true",
+                    "must_not_match": True,
+                },
+                "message": "生产环境 knife4j.enable 应为 false",
+            }
+        }
+        findings = ConfigCheckScanner().scan_directory(tmp_path, rules)
+        assert len(findings) >= 1
+
+
+# ── P1-2: _matches_on_dir exact match ───────────────────────────
+
+from code_check.scanner import _matches_on_dir
+
+
+class TestMatchesOnDirExact:
+    """P1-2: _matches_on_dir should not match substrings."""
+
+    def test_exact_match_works(self):
+        """'service' should match directory named 'service'."""
+        assert _matches_on_dir(Path("/src/service/Test.java"), "service") is True
+
+    def test_substring_not_matched(self):
+        """'service' should NOT match directory named 'webservice'."""
+        assert _matches_on_dir(Path("/src/webservice/Test.java"), "service") is False
+
+    def test_pipe_separated_patterns(self):
+        """Pipe-separated patterns should each require exact match."""
+        assert _matches_on_dir(Path("/src/config/SecurityConfig.java"), "config|security") is True
+        assert _matches_on_dir(Path("/src/security/AuthFilter.java"), "config|security") is True
+        assert _matches_on_dir(Path("/src/service/UserService.java"), "config|security") is False
+
+    def test_glob_pattern_still_works(self):
+        """Glob patterns like '*impl*' should still work."""
+        assert _matches_on_dir(Path("/src/impl/UserServiceImpl.java"), "*impl*") is True
+        assert _matches_on_dir(Path("/src/service/UserService.java"), "*impl*") is False
+
+
+# ── P1-3: ConfigCheckScanner exclude ────────────────────────────
+
+
+class TestConfigCheckExclude:
+    """P1-3: ConfigCheckScanner should respect exclude patterns."""
+
+    def test_excluded_directories_skipped(self, tmp_path):
+        """Files in excluded directories should not be scanned."""
+        config_dir = tmp_path / "target" / "classes"
+        config_dir.mkdir(parents=True)
+        app_yml = config_dir / "application.yml"
+        app_yml.write_text("password: mysecret123")
+
+        rules = {
+            "BE-IN-08": {
+                "description": "配置文件包含明文密码",
+                "level": "P0",
+                "program": {
+                    "scanner": "config-check",
+                    "file_pattern": "*.yml|*.yaml",
+                    "pattern": "(password|passwd)\\s*[:=]\\s*(?!\\$\\{)[^\\s]+",
+                    "must_not_match": True,
+                },
+                "message": "配置文件包含明文敏感信息",
+            }
+        }
+        findings = ConfigCheckScanner().scan_directory(
+            tmp_path, rules, exclude_patterns=["**/target/**"]
+        )
+        assert len(findings) == 0
+
+    def test_non_excluded_directories_still_scanned(self, tmp_path):
+        """Files not in excluded dirs should be scanned."""
+        config_dir = tmp_path / "resources"
+        config_dir.mkdir()
+        app_yml = config_dir / "application.yml"
+        app_yml.write_text("password: mysecret123")
+
+        rules = {
+            "BE-IN-08": {
+                "description": "配置文件包含明文密码",
+                "level": "P0",
+                "program": {
+                    "scanner": "config-check",
+                    "file_pattern": "*.yml|*.yaml",
+                    "pattern": "(password|passwd)\\s*[:=]\\s*(?!\\$\\{)[^\\s]+",
+                    "must_not_match": True,
+                },
+                "message": "配置文件包含明文敏感信息",
+            }
+        }
+        findings = ConfigCheckScanner().scan_directory(
+            tmp_path, rules, exclude_patterns=["**/target/**"]
+        )
+        assert len(findings) >= 1
+
+
+# ── P1-1: _get_fields line number accuracy ──────────────────────
+
+JAVA_DTO_WITH_COMMENTED_FIELDS = """
+package com.example.dto;
+
+/**
+ * DTO for creating users.
+ */
+public class CreateUserDTO {
+    // Username field
+    private String username;
+
+    /**
+     * Email address
+     */
+    private String email;
+
+    private Integer age;
+}
+"""
+
+
+class TestGetFieldsLineNumbers:
+    """P1-1: _get_fields should return accurate line numbers."""
+
+    def test_field_line_numbers_are_accurate(self):
+        """Field line numbers should be in correct relative order."""
+        from code_check.scanner import _get_fields
+        fields = _get_fields(JAVA_DTO_WITH_COMMENTED_FIELDS)
+        assert len(fields) == 3
+        names_and_lines = {f["name"]: f["line_num"] for f in fields}
+        # Fields should be in correct order
+        assert names_and_lines["username"] < names_and_lines["email"]
+        assert names_and_lines["email"] < names_and_lines["age"]
+        # Line numbers should be positive and reasonable
+        for name, lineno in names_and_lines.items():
+            assert lineno > 0, f"{name} line {lineno} should be > 0"
