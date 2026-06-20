@@ -84,6 +84,7 @@ agents/
 │   └── quality/                # 质量规范（代码风格、国际化、错误码、数据库）
 ├── reviewer/                   # 代码审计
 │   ├── README.md               # 审查入口，按流程执行
+│   ├── review.skill.md          # /review 斜杠命令定义
 │   ├── structure-check.md      # 结构审查（包结构、分层调用、命名、注入）
 │   ├── quality-check.md        # 质量审查（异常、日志、Result、数据库、校验）
 │   ├── auth-check.md           # 认证审查（StpKit、登录、拦截器、权限）
@@ -98,9 +99,12 @@ agents/
 │       ├── tests/              # 65 个测试
 │       ├── rules/              # 检查规则配置
 │       │   ├── program-checks.yaml  # 程序检查规则（9 项确定性规则）
-│       │   └── ai-checklist.yaml    # AI 检查清单（12 项语义规则）
+│       │   └── ai-checklist.yaml    # AI 检查清单（17 项语义规则）
 │       ├── hooks/              # Pre/Post hook 脚本
 │       └── code-check-config.yaml   # CLI 默认配置
+└── scheduler/                   # 调度器
+    ├── build.skill.md           # /build 斜杠命令定义
+    └── pipeline.yaml            # Coder-Reviewer 流水线 DAG 配置
 ```
 
 ## 全局规则速查
