@@ -12,6 +12,9 @@ output_dir: ./review-output/
 # 输出格式（scan 命令默认输出）：json | md
 format: json
 
+# 默认扫描路径（相对项目根目录）
+default_scan_path: ../../../src/main/java
+
 # 扫描排除目录
 exclude:
   - "**/test/**"

@@ -8,18 +8,27 @@
 
 set -euo pipefail
 
-# ═══════════════════════════════════════════════════════════════
-# 可配置项
-# ═══════════════════════════════════════════════════════════════
-
-DEFAULT_TARGET="${REVIEW_TARGET_PATH:-src/main/java}"
-TARGET_PATH="${1:-$DEFAULT_TARGET}"
-
 # ─────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# 路径解析
 # hooks/ → reviewer/ → agents/ → project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CHECK_SYSTEM_DIR="$PROJECT_DIR/agents/reviewer/check_system"
+CONFIG_FILE="$CHECK_SYSTEM_DIR/code-check-config.yaml"
+
+# ─────────────────────────────────────────────────────────────
+# 从 YAML 配置读取默认扫描路径；命令行参数优先
+CONFIG_PATH=$(python3 -c "
+import yaml
+try:
+    with open('$CONFIG_FILE') as f:
+        c = yaml.safe_load(f)
+    print(c.get('default_scan_path', 'src/main/java'))
+except Exception:
+    print('src/main/java')
+" 2>/dev/null)
+
+TARGET_PATH="${1:-${REVIEW_TARGET_PATH:-$CONFIG_PATH}}"
 
 echo "============================================"
 echo " Pre-hook: 程序预检"
