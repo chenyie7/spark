@@ -180,9 +180,16 @@ def _has_class_modifier(content: str, modifier: str) -> bool:
 
 
 def _has_private_constructor(content: str) -> bool:
-    """Check if the Java source contains a private constructor."""
+    """Check if the Java source contains a private constructor.
+
+    Matches constructors with optional ``throws`` clause, e.g.:
+    ``private Foo() throws Exception {``.
+    """
     clean = _strip_comments_preserve_lines(content)
-    return bool(re.search(r"private\s+\w+\s*\([^)]*\)\s*\{", clean))
+    return bool(re.search(
+        r"private\s+\w+\s*\([^)]*\)\s*(?:throws\s+[\w\s,]+)?\s*\{",
+        clean,
+    ))
 
 
 def _param_has_validated_with_group(params_str: str, param_name: str) -> bool:
@@ -311,6 +318,11 @@ def _strip_comments_preserve_lines(text: str) -> str:
     Block comments (``/* ... */``) are replaced with the same number of
     newlines they contain.  Line comments (``// ...``) are replaced with
     empty strings (they don't change line count).
+
+    Uses a negative lookbehind to avoid stripping ``://`` inside URL strings
+    (e.g. ``"http://example.com"``).  This is not a full Java parser — edge
+    cases with ``//`` inside string literals without a preceding ``:`` remain
+    as a known limitation.
     """
     # Block comments: replace with newlines to preserve line count
     result = re.sub(
@@ -319,8 +331,8 @@ def _strip_comments_preserve_lines(text: str) -> str:
         text,
         flags=re.DOTALL,
     )
-    # Line comments: just remove the comment text, keep the newline
-    result = re.sub(r"//[^\n]*", "", result)
+    # Line comments: skip "://" (URLs in strings), remove everything else
+    result = re.sub(r"(?<!:)//[^\n]*", "", result)
     return result
 
 
