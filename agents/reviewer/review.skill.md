@@ -24,6 +24,8 @@ bash agents/reviewer/hooks/review-pre-hook.sh {path}
 
 ### Step 2: AI 语义检查
 
+工作目录为 `agents/reviewer/check_system/`（与 Step 1 和 Step 3 保持一致），产物路径 `review-output/` 均相对于此目录。
+
 读取 `agents/reviewer/check_system/rules/review-prompt.md`，严格按照其中的指令执行。
 
 核心输入：
