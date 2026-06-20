@@ -161,6 +161,25 @@ def _has_annotation(content: str, annotation_pattern: str) -> bool:
     return bool(re.search(rf"\b{annotation_pattern}\b", content))
 
 
+def _glob_to_regex(pattern: str) -> str:
+    """Convert a shell glob pattern to a regex pattern.
+
+    Handles ``*`` (any sequence of non-separator chars) and ``?`` (any single
+    character).  If the pattern already looks like a regex (contains ``\\\\``
+    or ``.*`` or ``[``), return it unchanged.
+
+    Examples:
+        ``*VO.java`` → ``^.*VO\\.java$``
+        ``*Controller.java`` → ``^.*Controller\\.java$``
+    """
+    # If it already looks like a regex, return as-is
+    if any(token in pattern for token in ("\\\\", ".*", "(", ")", "[", "]", "+", "{", "}", "|")):
+        return pattern
+    # Convert glob to regex
+    result = "^" + fnmatch.translate(pattern) + "$"
+    return result
+
+
 def _has_class_modifier(content: str, modifier: str) -> bool:
     """Check if the class/interface declaration includes *modifier* (e.g. ``final``).
 
@@ -539,7 +558,7 @@ class TextGrepScanner(BaseScanner):
 
             # ── on_file_pattern filtering ──
             if "on_file_pattern" in program:
-                fp_regex = re.compile(program["on_file_pattern"])
+                fp_regex = re.compile(_glob_to_regex(program["on_file_pattern"]))
                 if not fp_regex.search(file_name):
                     continue
 
@@ -717,7 +736,7 @@ class JavaAnnotationScanner(BaseScanner):
 
             # ── on_file_pattern filtering ──
             if "on_file_pattern" in program:
-                fp_regex = re.compile(program["on_file_pattern"])
+                fp_regex = re.compile(_glob_to_regex(program["on_file_pattern"]))
                 if not fp_regex.search(file_path.name):
                     continue
 
