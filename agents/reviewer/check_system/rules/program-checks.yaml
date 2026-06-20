@@ -117,7 +117,7 @@ BE-ST-23:
   program:
     scanner: java-annotation
     on_class: "Service|ServiceImpl|Controller|RestController|Component"
-    missing_class_annotation: "@RequiredArgsConstructor"
+    required_class_annotation: "@RequiredArgsConstructor"
   message: "{class} 应使用 @RequiredArgsConstructor + private final 构造注入"
 
 # ═══════════════════════════════════════════════════════════════

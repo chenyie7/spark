@@ -1,10 +1,13 @@
 """Java file scanner engine for code-check system.
 
 Scans Java source files against program check rules defined in YAML.
-Supports three scanner types:
-  - text-grep:       line-by-line regex matching
-  - java-annotation: context-aware annotation presence checks
-  - java-return-type: controller method return-type check (Result<T>)
+Supports six scanner types:
+  - text-grep:          line-by-line regex matching
+  - java-annotation:    context-aware annotation presence checks
+  - java-return-type:   controller method return-type check (Result<T>)
+  - package-structure:  directory structure verification
+  - file-naming:        file naming convention checks
+  - config-check:       YAML/properties config file checks
 """
 
 import fnmatch
@@ -31,13 +34,13 @@ from code_check.models import (
 
 
 def _get_class_annotations(content: str) -> list[str]:
-    """Return annotation names applied at class level.
+    """Return annotation names applied at class/interface level.
 
-    Looks for annotations on lines preceding the ``class`` keyword.
+    Looks for annotations on lines preceding the ``class`` or ``interface`` keyword.
     """
     m = re.search(
         r"(?:public\s+|private\s+|protected\s+)?"
-        r"(?:abstract\s+)?(?:static\s+)?class\s+\w+",
+        r"(?:abstract\s+)?(?:static\s+)?(?:class|@interface|interface)\s+\w+",
         content,
     )
     if not m:
@@ -47,18 +50,90 @@ def _get_class_annotations(content: str) -> list[str]:
 
 
 def _get_class_name(content: str) -> str:
-    """Extract the simple class name from Java source."""
+    """Extract the simple class/interface name from Java source."""
     m = re.search(
         r"(?:public\s+|private\s+|protected\s+)?"
-        r"(?:abstract\s+)?(?:static\s+)?class\s+(\w+)",
+        r"(?:abstract\s+)?(?:static\s+)?(?:class|@interface|interface)\s+(\w+)",
         content,
     )
     return m.group(1) if m else ""
 
 
-def _any_match(annotations: list[str], pattern: str) -> bool:
-    """Return True if any annotation name matches the pipe-separated *pattern*."""
-    return any(re.search(pattern, a) for a in annotations)
+def _any_match(items: list[str], pattern: str) -> bool:
+    """Return True if any *item* matches the pipe-separated *pattern*.
+
+    Supports both glob patterns (``*Entity``) and regex/substring patterns.
+    """
+    for pat in pattern.split("|"):
+        pat = pat.strip()
+        if not pat:
+            continue
+        for item in items:
+            if "*" in pat or "?" in pat:
+                if fnmatch.fnmatch(item, pat):
+                    return True
+            elif re.search(pat, item):
+                return True
+    return False
+
+
+def _class_name_matches(class_name: str, on_class: str) -> bool:
+    """Check if *class_name* matches any pattern in pipe-separated *on_class*.
+
+    Supports both glob patterns (e.g. ``*Entity``) and regex/substring
+    patterns (e.g. ``RestController``).
+    """
+    if not class_name:
+        return False
+    for pat in on_class.split("|"):
+        pat = pat.strip()
+        if not pat:
+            continue
+        # Glob-style patterns (contain * or ?) → fnmatch
+        if "*" in pat or "?" in pat:
+            if fnmatch.fnmatch(class_name, pat):
+                return True
+        # Regex/substring patterns → re.search
+        elif re.search(pat, class_name):
+            return True
+    return False
+
+
+def _on_class_matches(
+    class_annotations: list[str], class_name: str, on_class: str
+) -> bool:
+    """Return True if *on_class* matches either annotations or class name.
+
+    This unifies the two semantics of ``on_class``:
+    1. Annotation name patterns: ``RestController|Controller`` matches ``@RestController``
+    2. Class name patterns: ``*Entity`` matches class ``UserEntity``
+    """
+    if _any_match(class_annotations, on_class):
+        return True
+    if _class_name_matches(class_name, on_class):
+        return True
+    return False
+
+
+def _matches_on_dir(file_path: Path, on_dir: str) -> bool:
+    """Check if *file_path*'s parent directory components match *on_dir*.
+
+    *on_dir* is a pipe-separated list of directory name patterns.
+    Example: ``"controller"`` matches ``.../controller/UserController.java``.
+    Example: ``"config|security"`` matches files in either directory.
+    """
+    if not on_dir:
+        return True
+    parts = [p for p in file_path.parent.parts]
+    patterns = on_dir.split("|")
+    for pat in patterns:
+        pat = pat.strip()
+        if not pat:
+            continue
+        for part in parts:
+            if fnmatch.fnmatch(part, pat) or re.search(pat, part):
+                return True
+    return False
 
 
 def _has_annotation(content: str, annotation_pattern: str) -> bool:
@@ -92,33 +167,95 @@ def _find_methods(content: str) -> list[dict]:
     """Find all method declarations in Java source with their metadata.
 
     Returns a list of dicts with keys:
-        name, return_type, params (structured), params_str, line_num.
+        name, return_type, params (structured), params_str, line_num, annotations.
     Block-comments and line-comments are stripped before matching.
+    Handles both regular methods (ending with ``{``) and interface/abstract
+    methods (ending with ``;``).
     """
     clean = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
     clean = re.sub(r"//[^\n]*", "", clean)
 
     methods: list[dict] = []
+    # Match both regular methods ({) and abstract/interface methods (;)
+    # Access modifier is optional to support interface methods.
+    # Post-filter removes false matches on Java keywords inside method bodies
+    # (e.g. "return new UserVO();" would otherwise match as a method).
     pattern = (
-        r"(?:public|private|protected)\s+"
-        r"(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
+        r"((?:@\w+(?:\([^)]*\))?\s*)*)"  # method annotations
+        r"(?:(?:public|private|protected)\s+)?"
+        r"(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:abstract\s+)?(?:default\s+)?"
         r"([\w<>,?\[\]\s]+?)\s+"
-        r"(\w+)\s*"
+        r"(\w+)\s*"  # method name
         r"\(([^()]*)\)"
-        r"\s*\{"
+        r"\s*(?:\{|;)"  # body or semicolon
     )
 
+    _JAVA_KEYWORDS = frozenset({
+        "return", "new", "if", "else", "for", "while", "do", "switch", "case",
+        "try", "catch", "finally", "throw", "throws", "class", "interface",
+        "enum", "package", "import", "synchronized", "static", "abstract",
+        "default", "private", "protected", "public", "assert", "break",
+        "continue", "instanceof", "super", "this", "void", "goto", "const",
+    })
+
     for m in re.finditer(pattern, clean):
+        method_name = m.group(3)
+        # Skip false matches on Java keywords (e.g. "new Foo()" in method bodies)
+        if method_name in _JAVA_KEYWORDS:
+            continue
+        return_type = m.group(2).strip()
+        # Skip if return type contains statement keywords
+        # (e.g. "return new UserVO()" would parse as method with return type "return new")
+        _STMT_KW = {"return", "throw", "new", "if", "else", "for", "while", "do", "switch", "case", "try", "catch", "finally"}
+        if any(token in _STMT_KW for token in return_type.split()):
+            continue
+        ann_line = m.group(1)
+        method_annotations = re.findall(r"@(\w+(?:\([^)]*\))?)", ann_line)
         methods.append(
             {
-                "return_type": m.group(1).strip(),
-                "name": m.group(2),
-                "params_str": m.group(3),
-                "params": _parse_params(m.group(3)),
+                "return_type": return_type,
+                "name": method_name,
+                "params_str": m.group(4),
+                "params": _parse_params(m.group(4)),
                 "line_num": content[: m.start()].count("\n") + 1,
+                "annotations": method_annotations,
             }
         )
     return methods
+
+
+def _get_fields(content: str) -> list[dict]:
+    """Extract field declarations from Java source.
+
+    Returns a list of dicts with keys:
+        name, type, annotations, line_num.
+    """
+    clean = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
+    clean = re.sub(r"//[^\n]*", "", clean)
+
+    fields: list[dict] = []
+    # Match: [annotations] [modifiers] Type name [= value];
+    pattern = (
+        r"((?:@\w+(?:\([^)]*\))?\s*)*)"  # field annotations
+        r"(?:private|protected|public)\s+"
+        r"(?:static\s+)?(?:final\s+)?"
+        r"([\w<>,?\[\]\s]+?)\s+"          # type
+        r"(\w+)"                            # name
+        r"\s*(?:=|;)"
+    )
+
+    for m in re.finditer(pattern, clean):
+        ann_line = m.group(1)
+        field_annotations = re.findall(r"@(\w+(?:\([^)]*\))?)", ann_line)
+        fields.append(
+            {
+                "type": m.group(2).strip(),
+                "name": m.group(3),
+                "annotations": field_annotations,
+                "line_num": content[: m.start()].count("\n") + 1,
+            }
+        )
+    return fields
 
 
 # ── Base Scanner ───────────────────────────────────────────────
@@ -157,6 +294,21 @@ class BaseScanner(ABC):
         """
         ...
 
+    def scan_directory(self, base_path: Path, rules: dict) -> list[Finding]:
+        """Run directory-level scan over *base_path*.
+
+        Override in scanners that need directory-level access
+        (e.g. package-structure, config-check).
+
+        Args:
+            base_path: Root directory to scan.
+            rules: Full rule dict.
+
+        Returns:
+            List of Finding objects, possibly empty.
+        """
+        return []
+
     @staticmethod
     def _rules_for_scanner(rules: dict, scanner_name: str) -> dict:
         """Filter *rules* to those whose ``program.scanner`` equals *scanner_name*."""
@@ -176,6 +328,11 @@ class TextGrepScanner(BaseScanner):
     Reports one ``Finding`` per matching line.  Supports an optional
     ``no_match_in_same_line`` negation pattern (e.g. to exclude lines that
     already use ``LambdaQueryWrapper`` when checking for ``QueryWrapper``).
+
+    Also supports:
+    - ``on_dir``: restrict to files in specific directories
+    - ``on_file_pattern``: restrict to files matching a filename regex
+    - ``must_match``: report when pattern is NOT found (inverse logic)
     """
 
     scanner_name = "text-grep"
@@ -188,9 +345,22 @@ class TextGrepScanner(BaseScanner):
 
         content = file_path.read_text(encoding="utf-8")
         lines = content.split("\n")
+        file_name = file_path.name
 
         for code, rule in my_rules.items():
             program = rule["program"]
+
+            # ── on_dir filtering ──
+            if "on_dir" in program:
+                if not _matches_on_dir(file_path, program["on_dir"]):
+                    continue
+
+            # ── on_file_pattern filtering ──
+            if "on_file_pattern" in program:
+                fp_regex = re.compile(program["on_file_pattern"])
+                if not fp_regex.search(file_name):
+                    continue
+
             regex = re.compile(program["pattern"])
             neg_regex = (
                 re.compile(program["no_match_in_same_line"])
@@ -199,21 +369,41 @@ class TextGrepScanner(BaseScanner):
             )
             level = Level(rule["level"])
             msg = rule["message"]
+            must_match = program.get("must_match", False)
 
-            for lineno, line in enumerate(lines, 1):
-                match = regex.search(line)
-                if match:
-                    if neg_regex and neg_regex.search(line):
-                        continue
+            if must_match:
+                # Inverse logic: report if pattern is NOT found anywhere
+                found = False
+                for lineno, line in enumerate(lines, 1):
+                    if regex.search(line):
+                        found = True
+                        break
+                if not found:
                     findings.append(
                         Finding(
                             code=code,
                             level=level,
-                            line=lineno,
+                            line=1,
                             message=msg,
-                            evidence=match.group().strip(),
+                            evidence=f"未找到匹配: {program['pattern']}",
                         )
                     )
+            else:
+                # Default: report each matching line
+                for lineno, line in enumerate(lines, 1):
+                    match = regex.search(line)
+                    if match:
+                        if neg_regex and neg_regex.search(line):
+                            continue
+                        findings.append(
+                            Finding(
+                                code=code,
+                                level=level,
+                                line=lineno,
+                                message=msg,
+                                evidence=match.group().strip(),
+                            )
+                        )
         return findings
 
 
@@ -223,13 +413,18 @@ class TextGrepScanner(BaseScanner):
 class JavaAnnotationScanner(BaseScanner):
     """Context-aware scanner for Java annotations.
 
-    Supports two targets:
+    Supports multiple targets:
 
     * ``method_param`` — checks that DTO-typed method parameters carry a
       required annotation (e.g. ``@Valid`` / ``@Validated``).
-    * ``required_class_annotation`` — checks that classes matching a
-      ``on_class`` pattern carry a specific class-level annotation
-      (e.g. ``@Slf4j``).
+    * ``field`` — checks that fields carry a required annotation
+      (e.g. ``@Schema`` on DTO fields).
+    * ``required_class_annotation`` — checks that classes carry a specific
+      class-level annotation (e.g. ``@Slf4j``).
+    * ``required_field_annotation`` — checks that classes have a field with
+      a specific annotation (e.g. ``@TableLogic`` on Entity).
+    * ``on_public_method`` + ``missing_annotation`` — checks that public methods
+      carry a required annotation (e.g. ``@Operation`` on Controller methods).
     """
 
     scanner_name = "java-annotation"
@@ -248,21 +443,42 @@ class JavaAnnotationScanner(BaseScanner):
             program = rule["program"]
             level = Level(rule["level"])
             msg_template = rule["message"]
-            on_class = program["on_class"]
 
-            if not _any_match(class_anns, on_class):
-                continue
+            # ── on_dir filtering ──
+            if "on_dir" in program:
+                if not _matches_on_dir(file_path, program["on_dir"]):
+                    continue
 
-            # ── method_param: DTO params missing @Validated/@Valid ──
+            # ── on_file_pattern filtering ──
+            if "on_file_pattern" in program:
+                fp_regex = re.compile(program["on_file_pattern"])
+                if not fp_regex.search(file_path.name):
+                    continue
+
+            # ── on_class: match against both annotations AND class name ──
+            if "on_class" in program:
+                if not _on_class_matches(class_anns, class_name, program["on_class"]):
+                    continue
+
             target = program.get("target", "")
-            if target == "method_param":
+
+            # ── target: field ──
+            if target == "field":
+                findings.extend(
+                    self._check_field_annotations(
+                        content, code, level, msg_template, program, class_name
+                    )
+                )
+
+            # ── target: method_param ──
+            elif target == "method_param":
                 findings.extend(
                     self._check_method_param_annotations(
                         content, code, level, msg_template, program, class_name
                     )
                 )
 
-            # ── required_class_annotation: class-level annotation missing ──
+            # ── required_class_annotation ──
             if "required_class_annotation" in program:
                 needed = program["required_class_annotation"]
                 if not _has_annotation(content, needed):
@@ -271,11 +487,128 @@ class JavaAnnotationScanner(BaseScanner):
                             code=code,
                             level=level,
                             line=0,
-                                                    message=_safe_format(msg_template, {"class": class_name, "class_": class_name, "method": ""}),
+                            message=_safe_format(
+                                msg_template,
+                                {"class": class_name, "class_": class_name, "method": ""},
+                            ),
                             evidence=f"缺少 {needed} 注解",
                         )
                     )
 
+            # ── required_field_annotation ──
+            if "required_field_annotation" in program:
+                needed = program["required_field_annotation"]
+                fields = _get_fields(content)
+                has_annotation = any(
+                    _has_annotation(f["type"] + " " + f["name"], needed)
+                    or any(
+                        re.search(needed.replace("@", ""), a)
+                        for a in f["annotations"]
+                    )
+                    for f in fields
+                )
+                if not has_annotation:
+                    findings.append(
+                        Finding(
+                            code=code,
+                            level=level,
+                            line=0,
+                            message=_safe_format(
+                                msg_template,
+                                {"class": class_name, "class_": class_name, "method": ""},
+                            ),
+                            evidence=f"缺少 {needed} 注解",
+                        )
+                    )
+
+            # ── on_public_method: check public methods for missing annotation ──
+            if program.get("on_public_method") and "missing_annotation" in program:
+                findings.extend(
+                    self._check_method_level_annotations(
+                        content, code, level, msg_template, program, class_name
+                    )
+                )
+
+        return findings
+
+    @staticmethod
+    def _check_field_annotations(
+        content: str,
+        code: str,
+        level: Level,
+        msg_template: str,
+        program: dict,
+        class_name: str,
+    ) -> list[Finding]:
+        """Check fields for missing annotations (e.g. @Schema on DTO fields)."""
+        findings: list[Finding] = []
+        missing_annotation = program.get("missing_annotation", "")
+        if not missing_annotation:
+            return findings
+
+        ann_regex = re.compile(missing_annotation.replace("@", ""))
+        fields = _get_fields(content)
+
+        for field in fields:
+            has_ann = any(ann_regex.search(a) for a in field["annotations"])
+            if not has_ann:
+                findings.append(
+                    Finding(
+                        code=code,
+                        level=level,
+                        line=field["line_num"],
+                        message=_safe_format(
+                            msg_template,
+                            {
+                                "class": class_name,
+                                "class_": class_name,
+                                "field": field["name"],
+                                "method": "",
+                            },
+                        ),
+                        evidence=f"字段 {field['type']} {field['name']} 缺少 {missing_annotation}",
+                    )
+                )
+        return findings
+
+    @staticmethod
+    def _check_method_level_annotations(
+        content: str,
+        code: str,
+        level: Level,
+        msg_template: str,
+        program: dict,
+        class_name: str,
+    ) -> list[Finding]:
+        """Check that methods carry required annotations (e.g. @Operation on public methods)."""
+        findings: list[Finding] = []
+        missing_annotation = program.get("missing_annotation", "")
+        if not missing_annotation:
+            return findings
+
+        ann_regex = re.compile(missing_annotation.replace("@", ""))
+        methods = _find_methods(content)
+
+        for method in methods:
+            has_ann = any(ann_regex.search(a) for a in method["annotations"])
+            if not has_ann:
+                findings.append(
+                    Finding(
+                        code=code,
+                        level=level,
+                        line=method["line_num"],
+                        message=_safe_format(
+                            msg_template,
+                            {
+                                "method": method["name"],
+                                "class": class_name,
+                                "class_": class_name,
+                            },
+                        ),
+                        evidence=f"方法 {method['name']} 缺少 {missing_annotation}",
+                        method=method["name"],
+                    )
+                )
         return findings
 
     @staticmethod
@@ -290,21 +623,53 @@ class JavaAnnotationScanner(BaseScanner):
         """Check method parameters for required annotations.
 
         Iterates over all methods in *content* and checks whether any parameter
-        whose type matches *match_param_type* also carries an annotation matching
+        whose type matches *match_param_type* (or whose annotations match
+        *match_annotation*) also carries an annotation matching
         *missing_annotation*.  If the annotation is absent a ``Finding`` is
         emitted for that method.
+
+        Also supports:
+        - ``on_method_annotation``: restrict to methods with this annotation
+        - ``match_annotation``: filter params by their existing annotations
+        - ``param_count_gte``: only check methods with >= N parameters
         """
         findings: list[Finding] = []
         match_param_type = program.get("match_param_type", "")
+        match_annotation = program.get("match_annotation", "")
         missing_annotation = program.get("missing_annotation", "")
+        on_method_annotation = program.get("on_method_annotation", "")
+        param_count_gte = program.get("param_count_gte", 0)
+
         type_regex = re.compile(match_param_type) if match_param_type else None
+        match_ann_regex = re.compile(match_annotation) if match_annotation else None
         ann_regex = re.compile(missing_annotation) if missing_annotation else None
+        method_ann_regex = (
+            re.compile(on_method_annotation) if on_method_annotation else None
+        )
 
         methods = _find_methods(content)
         for method in methods:
+            # Filter by method annotation
+            if method_ann_regex:
+                if not any(
+                    method_ann_regex.search(a) for a in method["annotations"]
+                ):
+                    continue
+
+            # Filter by param count
+            if param_count_gte and len(method["params"]) < param_count_gte:
+                continue
+
             for param in method["params"]:
+                # Filter by parameter type
                 if type_regex and not type_regex.search(param["type"]):
                     continue
+                # Filter by parameter annotation (e.g. @PathVariable/@RequestParam)
+                if match_ann_regex:
+                    param_anns = [f"@{a}" for a in param["annotations"]]
+                    if not any(match_ann_regex.search(a) for a in param_anns):
+                        continue
+
                 has_required_ann = False
                 if ann_regex:
                     for ann in param["annotations"]:
@@ -319,7 +684,12 @@ class JavaAnnotationScanner(BaseScanner):
                             line=method["line_num"],
                             message=_safe_format(
                                 msg_template,
-                                {"method": method["name"], "class": class_name, "class_": class_name},
+                                {
+                                    "method": method["name"],
+                                    "class": class_name,
+                                    "class_": class_name,
+                                    "param": f"{param['type']} {param['name']}",
+                                },
                             ),
                             evidence=f"参数 {param['type']} {param['name']} 缺少 {missing_annotation}",
                             method=method["name"],
@@ -336,6 +706,10 @@ class JavaReturnTypeScanner(BaseScanner):
 
     Rule must specify an ``on_class`` pattern (e.g. ``RestController|Controller``)
     and a ``required_return_pattern`` (e.g. ``Result<``).
+
+    Also supports:
+    - ``on_method_name``: restrict to methods whose name matches a pipe-separated
+      pattern (e.g. ``page|list`` for pagination methods).
     """
 
     scanner_name = "java-return-type"
@@ -348,6 +722,7 @@ class JavaReturnTypeScanner(BaseScanner):
 
         content = file_path.read_text(encoding="utf-8")
         class_anns = _get_class_annotations(content)
+        class_name = _get_class_name(content)
 
         for code, rule in my_rules.items():
             program = rule["program"]
@@ -357,11 +732,23 @@ class JavaReturnTypeScanner(BaseScanner):
             required_return = program["required_return_pattern"]
             return_regex = re.compile(required_return)
 
-            if not _any_match(class_anns, on_class):
+            if not _on_class_matches(class_anns, class_name, on_class):
                 continue
+
+            on_method_name = program.get("on_method_name", "")
 
             methods = _find_methods(content)
             for method in methods:
+                # Filter by method name
+                if on_method_name:
+                    name_patterns = on_method_name.split("|")
+                    if not any(
+                        re.search(p.strip(), method["name"])
+                        for p in name_patterns
+                        if p.strip()
+                    ):
+                        continue
+
                 if not return_regex.search(method["return_type"]):
                     findings.append(
                         Finding(
@@ -376,12 +763,370 @@ class JavaReturnTypeScanner(BaseScanner):
         return findings
 
 
+# ── Package Structure Scanner ──────────────────────────────────
+
+
+class PackageStructureScanner(BaseScanner):
+    """Checks that the Java package directory structure follows conventions.
+
+    Operates at the directory level — scans subdirectories under *base_path*
+    to verify required directories exist.
+
+    Supports:
+    - ``required_dirs``: pipe-separated list of required subdirectory names
+    - ``required_service_impl``: require ``service/impl/`` subdirectory
+    - ``check_impl_subdir``: check that ``service/`` has ``impl/`` child
+    """
+
+    scanner_name = "package-structure"
+
+    def scan(self, file_path: Path, rules: dict) -> list[Finding]:
+        # package-structure is directory-level; handled in scan_directory()
+        return []
+
+    def scan_directory(self, base_path: Path, rules: dict) -> list[Finding]:
+        findings: list[Finding] = []
+        my_rules = self._rules_for_scanner(rules, self.scanner_name)
+        if not my_rules:
+            return findings
+
+        # Find the deepest package directory under base_path
+        java_dirs = self._find_java_package_dirs(base_path)
+        if not java_dirs:
+            return findings
+
+        # Check each Java package directory
+        for pkg_dir in java_dirs:
+            for code, rule in my_rules.items():
+                program = rule["program"]
+                level = Level(rule["level"])
+                msg = rule["message"]
+
+                subdirs = {
+                    d.name: d
+                    for d in pkg_dir.iterdir()
+                    if d.is_dir() and not d.name.startswith(".")
+                }
+
+                # Check required_dirs
+                if "required_dirs" in program:
+                    required = program["required_dirs"].split("|")
+                    missing = [d for d in required if d not in subdirs]
+                    if missing:
+                        findings.append(
+                            Finding(
+                                code=code,
+                                level=level,
+                                line=0,
+                                message=msg,
+                                evidence=f"缺少子包: {', '.join(missing)} (路径: {pkg_dir})",
+                            )
+                        )
+
+                # Check service/impl
+                if program.get("required_service_impl"):
+                    if "service" in subdirs:
+                        service_sub = {
+                            d.name: d
+                            for d in subdirs["service"].iterdir()
+                            if d.is_dir()
+                        }
+                        if "impl" not in service_sub:
+                            findings.append(
+                                Finding(
+                                    code=code,
+                                    level=level,
+                                    line=0,
+                                    message=msg,
+                                    evidence=f"缺少 service/impl 子包 (路径: {subdirs['service']})",
+                                )
+                            )
+                    else:
+                        findings.append(
+                            Finding(
+                                code=code,
+                                level=level,
+                                line=0,
+                                message=msg,
+                                evidence=f"缺少 service/ 子包 (路径: {pkg_dir})",
+                            )
+                        )
+
+                # check_impl_subdir
+                if program.get("check_impl_subdir"):
+                    if "service" in subdirs:
+                        service_sub = {
+                            d.name: d
+                            for d in subdirs["service"].iterdir()
+                            if d.is_dir()
+                        }
+                        if "impl" not in service_sub:
+                            findings.append(
+                                Finding(
+                                    code=code,
+                                    level=level,
+                                    line=0,
+                                    message=msg,
+                                    evidence=f"缺少 service/impl 子包 (路径: {subdirs['service']})",
+                                )
+                            )
+
+        return findings
+
+    @staticmethod
+    def _find_java_package_dirs(base_path: Path) -> list[Path]:
+        """Find Java package root directories under *base_path*.
+
+        Walks down from base_path looking for directories that contain
+        standard package subdirectories (controller, service, etc.).
+
+        Returns only the topmost package roots — subdirectories that are
+        themselves inside a standard package dir (e.g. ``controller/``)
+        are excluded.
+        """
+        candidates: list[Path] = []
+        std_names = {"controller", "service", "mapper", "entity", "dto", "vo"}
+
+        for root, dirs, files in os.walk(base_path):
+            dirs[:] = [
+                d
+                for d in dirs
+                if not d.startswith(".")
+                and d not in ("test", "target", "node_modules")
+            ]
+            root_path = Path(root)
+            child_dir_names = set(dirs)
+            has_java = any(f.endswith(".java") for f in files)
+
+            # A package root has standard subdirs, OR has Java files
+            # but is NOT inside a standard subdir itself
+            if child_dir_names & std_names:
+                candidates.append(root_path)
+            elif has_java:
+                # Only include if the parent directory is not a standard
+                # package subdir (e.g. don't include controller/ itself)
+                parent_name = root_path.parent.name
+                if parent_name not in std_names:
+                    candidates.append(root_path)
+
+        # Deduplicate: keep only topmost directories (remove children)
+        result: list[Path] = []
+        for c in sorted(candidates):
+            # Keep c if no other candidate is a parent of c
+            if not any(c != other and c.is_relative_to(other) for other in candidates):
+                result.append(c)
+
+        # Fallback: if no structured package found, use base_path itself
+        if not result:
+            result.append(base_path)
+        return result
+
+
+# ── File Naming Scanner ────────────────────────────────────────
+
+
+class FileNamingScanner(BaseScanner):
+    """Checks Java file naming conventions.
+
+    Supports:
+    - ``on_dir``: restrict to files in specific directories
+    - ``pattern``: glob pattern the filename must match
+    - ``exclude_pattern``: glob pattern to exclude from check
+    - ``must_be_in_root_package``: file must be directly in the root package
+    - ``must_not_match``: report if pattern IS matched (inverse)
+    - ``on_file_pattern``: restrict to files matching a filename regex
+    """
+
+    scanner_name = "file-naming"
+
+    def scan(self, file_path: Path, rules: dict) -> list[Finding]:
+        findings: list[Finding] = []
+        my_rules = self._rules_for_scanner(rules, self.scanner_name)
+        if not my_rules:
+            return findings
+
+        file_name = file_path.name
+
+        for code, rule in my_rules.items():
+            program = rule["program"]
+            level = Level(rule["level"])
+            msg = rule["message"]
+
+            # ── on_dir filtering ──
+            if "on_dir" in program:
+                if not _matches_on_dir(file_path, program["on_dir"]):
+                    continue
+
+            # ── on_file_pattern filtering ──
+            if "on_file_pattern" in program:
+                fp_regex = re.compile(program["on_file_pattern"])
+                if not fp_regex.search(file_name):
+                    continue
+
+            # ── exclude_pattern ──
+            if "exclude_pattern" in program:
+                if fnmatch.fnmatch(file_name, program["exclude_pattern"]):
+                    continue
+
+            # ── must_be_in_root_package ──
+            if program.get("must_be_in_root_package"):
+                # Check if file is directly in one of the top-level package dirs
+                # The file's parent dir relative to base_path should not have
+                # subdirs that look like packages
+                parent = file_path.parent
+                sibling_dirs = [
+                    d
+                    for d in parent.iterdir()
+                    if d.is_dir() and not d.name.startswith(".")
+                ]
+                # If parent has standard package subdirs (controller, service, etc),
+                # then this file IS in the root package — that's correct
+                std_names = {"controller", "service", "mapper", "entity", "dto", "vo"}
+                if not any(d.name in std_names for d in sibling_dirs):
+                    # We're in a sub-package — this file should be in root
+                    findings.append(
+                        Finding(
+                            code=code,
+                            level=level,
+                            line=0,
+                            message=msg,
+                            evidence=f"{file_name} 不在根包下 (当前路径: {file_path.parent})",
+                        )
+                    )
+                continue
+
+            # ── must_not_match: inverse logic ──
+            if program.get("must_not_match"):
+                pattern = program["pattern"]
+                if fnmatch.fnmatch(file_name, pattern):
+                    findings.append(
+                        Finding(
+                            code=code,
+                            level=level,
+                            line=0,
+                            message=msg,
+                            evidence=f"文件名匹配禁止模式: {pattern}: {file_name}",
+                        )
+                    )
+                continue
+
+            # ── Default: check that filename matches pattern ──
+            pattern = program["pattern"]
+            if not fnmatch.fnmatch(file_name, pattern):
+                findings.append(
+                    Finding(
+                        code=code,
+                        level=level,
+                        line=0,
+                        message=msg,
+                        evidence=f"文件名不符合命名规范: {file_name} (期望: {pattern})",
+                    )
+                )
+
+        return findings
+
+
+# ── Config Check Scanner ───────────────────────────────────────
+
+
+class ConfigCheckScanner(BaseScanner):
+    """Scans YAML/properties config files for patterns.
+
+    Operates at the directory level — finds config files by glob pattern
+    and checks their contents.
+
+    Supports:
+    - ``file_pattern``: glob to find config files (e.g. ``*.yml|*.yaml``)
+    - ``pattern``: regex to search for in file contents
+    - ``must_not_match``: report if pattern IS found (security anti-pattern)
+    - ``exclude_file``: glob to exclude specific files
+    """
+
+    scanner_name = "config-check"
+
+    def scan(self, file_path: Path, rules: dict) -> list[Finding]:
+        # config-check is directory-level; handled in scan_directory()
+        return []
+
+    def scan_directory(self, base_path: Path, rules: dict) -> list[Finding]:
+        findings: list[Finding] = []
+        my_rules = self._rules_for_scanner(rules, self.scanner_name)
+        if not my_rules:
+            return findings
+
+        for code, rule in my_rules.items():
+            program = rule["program"]
+            level = Level(rule["level"])
+            msg = rule["message"]
+            file_pattern = program.get("file_pattern", "*.yml|*.yaml|*.properties")
+            must_not_match = program.get("must_not_match", False)
+            exclude_file = program.get("exclude_file", "")
+
+            # Find matching config files
+            patterns = file_pattern.split("|")
+            for pat in patterns:
+                pat = pat.strip()
+                if not pat:
+                    continue
+                for match in base_path.rglob(pat):
+                    if not match.is_file():
+                        continue
+
+                    # Exclude specific files
+                    if exclude_file and fnmatch.fnmatch(match.name, exclude_file):
+                        continue
+
+                    # Skip hidden dirs
+                    if any(p.startswith(".") for p in match.parts):
+                        continue
+
+                    try:
+                        content = match.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        continue
+
+                    regex = re.compile(program["pattern"])
+                    lines = content.split("\n")
+
+                    if must_not_match:
+                        # Report if pattern IS found (e.g. plaintext password)
+                        for lineno, line in enumerate(lines, 1):
+                            if regex.search(line):
+                                findings.append(
+                                    Finding(
+                                        code=code,
+                                        level=level,
+                                        line=lineno,
+                                        message=msg,
+                                        evidence=f"{match.name}:{lineno}: {line.strip()[:120]}",
+                                    )
+                                )
+                    else:
+                        # Report if pattern is NOT found
+                        found = any(regex.search(line) for line in lines)
+                        if not found:
+                            findings.append(
+                                Finding(
+                                    code=code,
+                                    level=level,
+                                    line=0,
+                                    message=msg,
+                                    evidence=f"{match.name}: 未找到匹配: {program['pattern']}",
+                                )
+                            )
+
+        return findings
+
+
 # ── Scanner Registry ───────────────────────────────────────────
 
 SCANNERS: dict[str, BaseScanner] = {
     "text-grep": TextGrepScanner(),
     "java-annotation": JavaAnnotationScanner(),
     "java-return-type": JavaReturnTypeScanner(),
+    "package-structure": PackageStructureScanner(),
+    "file-naming": FileNamingScanner(),
+    "config-check": ConfigCheckScanner(),
 }
 
 
@@ -512,6 +1257,19 @@ def scan_single_file(file_path: Path, rules: dict) -> list[Finding]:
     return all_findings
 
 
+# ── Directory-level Scan ───────────────────────────────────────
+
+
+def _run_directory_scanners(base_path: Path, rules: dict) -> list[Finding]:
+    """Run directory-level scanners (package-structure, config-check)."""
+    findings: list[Finding] = []
+    for scanner_name in ("package-structure", "config-check"):
+        scanner = SCANNERS.get(scanner_name)
+        if scanner:
+            findings.extend(scanner.scan_directory(base_path, rules))
+    return findings
+
+
 # ── Sensitive-Keyword Hints ────────────────────────────────────
 
 _SENSITIVE_KEYWORDS = [
@@ -588,12 +1346,16 @@ def scan_files(
     else:
         active_rules = rules
 
+    # ── Phase 1: Directory-level scanners ──
+    dir_findings = _run_directory_scanners(base_path, active_rules)
+
+    # ── Phase 2: Per-file scanners ──
     java_files = find_java_files(base_path, excludes)
     file_names = [f.name for f in java_files]
     breakdown = classify_files(file_names)
     file_reports: list[FileReport] = []
     all_hints: list[HintForAI] = []
-    all_findings: list[Finding] = []
+    all_findings: list[Finding] = list(dir_findings)
 
     for java_file in java_files:
         try:
@@ -613,6 +1375,13 @@ def scan_files(
             ]
         all_findings.extend(findings)
         file_reports.append(FileReport(file=str(java_file), findings=findings))
+
+    # Add directory-level findings as a synthetic file report
+    if dir_findings:
+        file_reports.insert(
+            0,
+            FileReport(file="[directory-structure]", findings=dir_findings),
+        )
 
     file_count = len(java_files)
     passed_count = sum(1 for r in file_reports if not r.findings)
