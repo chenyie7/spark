@@ -1,97 +1,170 @@
-# 代码审查规范索引
+# 代码审查系统
 
-> 验证当前代码是否遵守 `agents/coder/` 中定义的开发规范。只读，不修改代码。
-
----
-
-## 一、审查流程
-
-按以下顺序执行，前一个维度通过再进入下一个：
-
-```
-1. structure-check.md   → 结构审查（代码骨架对不对）
-2. quality-check.md     → 质量审查（代码写得好不好）
-3. auth-check.md        → 认证审查（认证授权有没有漏洞）
-4. infra-check.md       → 基础设施审查（文档、配置、Redis、国际化）
-```
-
-每个维度独立输出审查结果，汇总后形成完整审查报告。
+> 双层校验：程序预检（零 AI Token）+ AI 语义检查，确保代码遵守 `agents/coder/` 中定义的开发规范。
 
 ---
 
-## 二、检查项编码体系
-
-每条检查项有唯一编码 `BE-{维度}-{序号}`，方便追溯和自动化：
-
-| 编码前缀 | 维度 | 对应文件 |
-|:--|------|------|
-| `BE-ST-` | 结构审查 | structure-check.md |
-| `BE-QL-` | 质量审查 | quality-check.md |
-| `BE-AU-` | 认证审查 | auth-check.md |
-| `BE-IN-` | 基础设施审查 | infra-check.md |
-
-每项包含 6 个字段：编码、分类、检查项、级别、错误消息模板、规范依据。
-
----
-
-## 三、严重级别
-
-| 级别 | 标识 | 含义 | 处理要求 |
-|------|------|------|---------|
-| P0 | 🔴 阻断 | 编译失败、运行时 NPE/500、安全漏洞 | 必须修复，否则不能合并 |
-| P1 | 🟡 重要 | 违反核心规范，可能导致线上问题 | **强烈建议**修复 |
-| P2 | 🟢 建议 | 风格不一致、轻微改进 | 可议，不阻塞合并 |
-
----
-
-## 四、审查报告格式
-
-每个维度审查完成后输出：
+## 一、审查架构
 
 ```
-## {维度名称} 审查
-
-| # | 级别 | 文件:行号 | 问题 | 规范依据 | 修复建议 |
-|---|------|----------|------|---------|---------|
-| 1 | P0 | UserController.java:15 | Controller 直接注入 Mapper | structure-check.md #2 | 改为注入 Service |
-| 2 | P1 | ... | ... | ... | ... |
-```
-
-最后汇总：
-
-```
-## 审查汇总
-
-| 维度 | P0 | P1 | P2 |
-|------|----|----|-----|
-| 结构审查 | 0 | 2 | 1 |
-| 质量审查 | 1 | 0 | 3 |
-| 认证审查 | 0 | 0 | 0 |
-| 基础设施审查 | 0 | 1 | 2 |
-| 文件上传审查 | 0 | 0 | 1 |
+┌─────────────────────────────────────────────────────┐
+│                  /review <path>                      │
+│                 (review.skill.md)                    │
+├─────────────────────────────────────────────────────┤
+│  Layer 1: 程序预检 (check_system/)                    │
+│  Python CLI · 零 AI Token · 确定性"有没有"问题         │
+│  6 种扫描器 · 39 条规则 · P0/P1 阻断                  │
+├─────────────────────────────────────────────────────┤
+│  Layer 2: AI 检查清单 (check_system/rules/)           │
+│  Review Agent · 语义理解 · "对不对"问题                │
+│  17 条规则 · PASS/FAIL/NA 判定                       │
+├─────────────────────────────────────────────────────┤
+│  输出: review-output/final-review-report.md          │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 五、按分层维度快速定位
+## 二、快速使用
 
-审查特定分层时，检查项分散在多个文件中，下表帮助快速定位：
+### 开启/关闭 Hook
 
-| 分层 | structure-check | quality-check | auth-check | infra-check |
-|------|:--:|:--:|:--:|:--:|
-| **Controller** | ✅ 分层调用(#二) DTO放置(#三) 命名(#四) | ✅ try-catch(#一.4) Result(#三) JSR303(#五) | ✅ 权限注解(#五) | ✅ Swagger(#一) |
-| **Service** | ✅ 接口/实现(#二) 注入(#五) | ✅ 异常(#一.5) 代码风格(#六) | ✅ 获取用户(#六) | — |
-| **Mapper** | ✅ 分层调用(#二) | ✅ 数据库(#四) | — | — |
-| **Entity/DTO/VO** | ✅ DTO放置(#三) 命名(#四) | ✅ 代码风格(#六) 校验(#五) | — | ✅ Swagger注解(#一) |
-| **配置/基础设施** | — | ✅ 日志(#二) | — | ✅ 配置(#二) Redis(#三) i18n(#四) 文件(#五) |
-| **认证授权** | — | — | ✅ StpKit/登录/拦截器/SSO | — |
+```
+/review:on   → 安装 PostToolUse hook，每次 Write/Edit Java 文件后自动预检
+/review:off  → 移除 hook
+```
 
-> 表中 `#X` 指向对应审查文件中的章节编号。例如审查 Controller 层的 Swagger 注解，先在 structure-check 确认命名和 DTO 放置，再看 infra-check #一。
+### 手动扫描
+
+```bash
+cd agents/reviewer/check_system
+
+# 扫描指定目录
+python3 -m code_check.cli scan ../../../src/main/java
+
+# 使用默认配置扫描（从 code-check-config.yaml 读取路径）
+python3 -m code_check.cli scan
+
+# 生成最终报告
+python3 -m code_check.cli report \
+  --pre review-output/pre-check-result.json \
+  --ai review-output/review-result.json \
+  --output review-output/final-review-report.md
+```
+
+### 完整审查流程
+
+```
+/review <path>   → 程序预检 → AI 语义检查 → 合并报告
+```
 
 ---
-## 六、审查原则
 
-- **对照规范，不凭经验**：每条问题必须对应到具体规范文件的章节
+## 三、配置
+
+编辑 `check_system/code-check-config.yaml`：
+
+```yaml
+strategy: strict          # strict | normal | loose（阻断策略）
+default_scan_path: ../../../src/main/java   # 默认扫描路径
+exclude:                  # 排除目录
+  - "**/test/**"
+  - "**/target/**"
+```
+
+阻断策略：
+- `strict`：P0 或 P1 → 阻断，Review Agent 不启动
+- `normal`：仅 P0 → 阻断
+- `loose`：仅 P0 阻断，跳过 P2 规则
+
+---
+
+## 四、规则体系
+
+### 程序检查规则（39 条，6 种扫描器）
+
+| 扫描器 | 覆盖维度 | 规则数 |
+|--------|---------|:--:|
+| `text-grep` | 行级正则匹配（日志、注入、密码等） | 24 |
+| `java-annotation` | 注解检查（校验、日志、Swagger 等） | 11 |
+| `java-return-type` | Controller 返回类型（Result<T>） | 2 |
+| `package-structure` | 包结构（标准子包、service/impl） | 2 |
+| `file-naming` | 文件命名（Controller/Service/Mapper 等） | 8 |
+| `config-check` | 配置文件（明文密码、knife4j 等） | 3 |
+
+> 规则定义：`check_system/rules/program-checks.yaml`
+
+### AI 检查清单（17 条，4 个维度）
+
+| 维度 | 规则数 |
+|------|:--:|
+| 分层架构 | 3 |
+| 异常处理 | 5 |
+| 日志质量 | 2 |
+| 代码质量 | 5 |
+| 数据库规范 | 2 |
+
+> 规则定义：`check_system/rules/ai-checklist.yaml`
+
+### 严重级别
+
+| 级别 | 含义 | 处理 |
+|------|------|------|
+| P0 | 安全漏洞、崩溃、数据错误 | 必须修复 |
+| P1 | 违反核心规范、可能导致线上问题 | 强烈建议修复 |
+| P2 | 风格建议、轻微改进 | 可议 |
+
+---
+
+## 五、目录结构
+
+```
+reviewer/
+├── README.md                    # 本文件
+├── review.skill.md              # /review 斜杠命令定义
+├── check_system/                # 双层校验系统
+│   ├── code_check/              # Python 包
+│   │   ├── cli.py               # CLI 入口（scan + report）
+│   │   ├── scanner.py           # 6 种扫描器引擎
+│   │   ├── config.py            # 配置加载器
+│   │   ├── models.py            # 数据模型
+│   │   └── reporter.py          # 报告生成器（Markdown）
+│   ├── rules/                   # 检查规则
+│   │   ├── program-checks.yaml  # 程序检查规则（39 条）
+│   │   ├── ai-checklist.yaml    # AI 检查清单（17 条）
+│   │   └── review-prompt.md     # AI 审查指令模板
+│   ├── tests/                   # 126 个测试
+│   └── code-check-config.yaml  # CLI 配置文件
+├── hooks/                       # Git Hook 脚本
+│   ├── settings.template.json   # Hook 配置模板（/review:on 使用）
+│   ├── review-pre-hook.sh       # 程序预检脚本
+│   └── review-post-hook.sh      # 报告合并脚本
+├── structure-check.md           # [参考] 结构审查规范原文
+├── quality-check.md             # [参考] 质量审查规范原文
+├── auth-check.md                # [参考] 认证审查规范原文
+└── infra-check.md               # [参考] 基础设施审查规范原文
+```
+
+> `*check.md` 文件为原始规范文档，规范内容已编码到 `check_system/rules/` 中。保留作为参考，备份分支：`backup/original-reviewer-files`。
+
+---
+
+## 六、编码体系
+
+每条检查项有唯一编码 `BE-{维度}-{序号}`：
+
+| 编码前缀 | 维度 |
+|:--|------|
+| `BE-ST-` | 结构审查 |
+| `BE-QL-` | 质量审查 |
+| `BE-AU-` | 认证审查 |
+| `BE-IN-` | 基础设施审查 |
+
+---
+
+## 七、审查原则
+
+- **对照规范，不凭经验**：每条问题对应具体规则文件
 - **区分强制和建议**：P0 阻断，P1 强烈建议，P2 可议
-- **不重复报问题**：同一规范的多处违反分别报，同一行代码不跨维度重复
+- **双层互补**：程序检查覆盖确定性"有没有"，AI 覆盖语义"对不对"
 - **只检查不修改**：审查不自动修复代码，除非用户明确要求
