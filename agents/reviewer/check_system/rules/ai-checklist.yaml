@@ -1,37 +1,120 @@
 # AI 检查清单 —— 需要语义理解的"对不对"问题
 # AI Review Agent 逐项确认，输出 review-result.json
+# strategy 控制执行范围：loose 仅 P0+P1，strict/normal 全量（含 P2）
 
 # ═══════════════════════════════════════════════════════════════
-# 异常处理
+# Structure Review / 结构审查（2 项）
 # ═══════════════════════════════════════════════════════════════
+
+BE-ST-04:
+  description: "Controller 是否直接注入 Mapper"
+  level: P0
+  ai:
+    prompt_hint: "检查 Controller 类中是否直接注入了 Mapper 接口。Controller 应通过 Service 调用，直接注入 Mapper 违反了分层架构。搜索 Controller 类中的 @Autowired 或 @RequiredArgsConstructor 或构造注入的字段，检查是否有 Mapper 类型"
+
+BE-ST-05:
+  description: "Service 是否只有实现类没有接口"
+  level: P1
+  ai:
+    prompt_hint: "检查 service/ 目录下是否有对应的 Service 接口。Spring AOP 代理（事务、缓存等）依赖接口。如果 ServiceImpl 存在但没有同名的 Service 接口，AOP 代理将失效"
+
+BE-ST-06:
+  description: "业务逻辑是否写在 Controller 层（应下沉到 Service）"
+  level: P2
+  ai:
+    prompt_hint: "检查 Controller 方法中是否包含了超过 10 行的业务逻辑代码。Controller 应只负责参数校验、调用 Service、返回结果。复杂的条件判断、数据转换、多表操作应下沉到 Service 层"
+
+BE-ST-07:
+  description: "Service 方法是否返回 Entity 给 Controller"
+  level: P1
+  ai:
+    prompt_hint: "检查 Service 方法的返回值类型。如果返回的是 Entity 类型，Controller 会直接暴露数据库结构。应转换为 VO 后返回"
+
+BE-ST-08:
+  description: "Entity 是否直接返回给 Controller（未转换为 VO）"
+  level: P1
+  ai:
+    prompt_hint: "检查 Controller 方法的返回值是否直接使用了 Entity 类型。Entity 是数据库映射对象，不应暴露到 Controller 层，应转换为 VO"
+
+BE-ST-09:
+  description: "DTO 是否被用作 Mapper 参数"
+  level: P1
+  ai:
+    prompt_hint: "检查 Service 层代码，看 Mapper 方法调用时传入的参数是否为 DTO 类型。Mapper 应接收 Entity 参数，DTO 应在 Service 层转换为 Entity 后再传入 Mapper"
+
+BE-ST-10:
+  description: "Controller 方法参数是否超过 3 个"
+  level: P2
+  ai:
+    prompt_hint: "检查 Controller 方法的参数列表。如果参数超过 3 个，应收敛到一个 DTO 中并使用 POST 方式提交。逐个参数不利于维护和扩展"
+
+BE-ST-11:
+  description: "GET 请求是否使用了 DTO 或 @RequestBody"
+  level: P1
+  ai:
+    prompt_hint: "检查 @GetMapping 标注的方法是否使用了 @RequestBody 注解或接收 DTO 参数。GET 请求应使用 @RequestParam 逐个接收参数，不应使用 @RequestBody"
+
+BE-ST-12:
+  description: "DTO 作为 @RequestBody 入参时是否加了 @NoArgsConstructor"
+  level: P1
+  ai:
+    prompt_hint: "检查所有 DTO 类（用于 @RequestBody 接收的），是否添加了 @NoArgsConstructor 注解。Jackson 反序列化依赖无参构造，缺少会导致 400 错误"
+
+BE-ST-13:
+  description: "微服务模式下跨服务契约 DTO/VO 是否放在 api 模块"
+  level: P1
+  ai:
+    prompt_hint: "如果项目是微服务架构，检查跨服务调用使用的 DTO/VO 类是否放在公共 api 模块中。跨服务共享的 DTO/VO 不应放在单个服务的代码中"
+
+BE-ST-24:
+  description: "构造注入参数是否超过 7 个"
+  level: P2
+  ai:
+    prompt_hint: "检查使用 @RequiredArgsConstructor 的类，如果构造注入的 final 字段超过 7 个，说明该类职责过多，应考虑拆分为多个 Service"
+
+# ═══════════════════════════════════════════════════════════════
+# Quality Review / 质量审查（20 项 AI 检查）
+# ═══════════════════════════════════════════════════════════════
+
+# ── 异常处理 ──
 
 BE-QL-01:
   description: "是否写了 throw new RuntimeException(\"自由文本\")"
   level: P1
   ai:
-    prompt_hint: "检查代码中是否直接抛出 new RuntimeException() 并传入自由文本，应使用 BusinessException(BusinessErrorEnum.XXX) 替代"
+    prompt_hint: "检查代码中是否直接抛出 new RuntimeException() 并传入自由文本，应使用 BusinessException(BusinessErrorEnum.XXX) 替代。自由文本无法国际化，也无法统一管理错误码"
 
 BE-QL-02:
   description: "业务异常是否使用 BusinessException(BusinessErrorEnum.XXX)"
   level: P1
   ai:
-    prompt_hint: "检查抛出的业务异常是否使用了 BusinessException 并传入了 BusinessErrorEnum 枚举值，而非直接 new BusinessException(\"文本\")"
+    prompt_hint: "检查抛出的业务异常是否使用了 BusinessException 并传入了 BusinessErrorEnum 枚举值，而非直接 new BusinessException(\"文本\")。枚举确保错误码统一管理"
+
+BE-QL-03:
+  description: "新增 BusinessErrorEnum 后是否同步添加了国际化资源"
+  level: P1
+  ai:
+    prompt_hint: "检查新增的 BusinessErrorEnum 枚举值，确认对应的 messages_zh_CN.properties 和 messages_en_US.properties 中是否都添加了对应的 key。新增错误码但缺少国际化资源会导致运行时显示错误码而非友好提示"
 
 BE-QL-04:
   description: "Controller 方法是否包裹了 try-catch"
   level: P1
   ai:
-    prompt_hint: "检查 Controller 方法中是否手写了 try-catch，应由 GlobalExceptionHandler 统一拦截异常，Controller 不应有 try-catch 块"
+    prompt_hint: "检查 Controller 方法中是否手写了 try-catch 块。应由 GlobalExceptionHandler 统一拦截异常，Controller 不应有 try-catch 块。手写 try-catch 会导致异常处理逻辑分散"
 
 BE-QL-05:
   description: "Service 中 catch 异常后是否只打日志不抛出"
   level: P1
   ai:
-    prompt_hint: "检查 Service 层的 catch 块，确认 catch 后是否只记录了日志但没有向上抛出异常。如果异常被吞掉，上层调用者无法感知错误"
+    prompt_hint: "检查 Service 层的 catch 块，确认 catch 后是否只记录了日志但没有向上抛出异常。如果异常被吞掉，上层调用者（Controller、事务管理器）无法感知错误，可能导致数据不一致"
 
-# ═══════════════════════════════════════════════════════════════
-# 日志质量
-# ═══════════════════════════════════════════════════════════════
+BE-QL-06:
+  description: "系统异常（NPE、IO 等）是否被 GlobalExceptionHandler 兜底处理"
+  level: P2
+  ai:
+    prompt_hint: "检查 GlobalExceptionHandler 中是否有兜底的 @ExceptionHandler(Exception.class) 方法，确保未被业务异常覆盖的系统异常（NullPointerException、IOException 等）也能返回统一格式的错误响应"
+
+# ── 日志质量 ──
 
 BE-QL-11:
   description: "log.info 是否包含关键业务信息（如 orderId、userId）"
@@ -43,58 +126,278 @@ BE-QL-12:
   description: "循环内是否有大量 log.info"
   level: P2
   ai:
-    prompt_hint: "检查是否存在在 for/while 循环体内调用 log.info 的代码，循环内大量打印日志会影响性能"
+    prompt_hint: "检查是否存在在 for/while 循环体内调用 log.info 的代码。循环内大量打印日志会严重影响性能，应将日志移到循环外或使用批量日志"
 
-# ═══════════════════════════════════════════════════════════════
-# Result 返回体
-# ═══════════════════════════════════════════════════════════════
+# ── Result 返回体 ──
 
 BE-QL-14:
   description: "是否返回了裸的 String、boolean、Map 或 JSONObject"
   level: P1
   ai:
-    prompt_hint: "检查 Controller 方法是否直接返回了 String、boolean、Map、JSONObject 等裸类型，应使用 Result<T> 包裹或定义 VO 返回"
+    prompt_hint: "检查 Controller 方法是否直接返回了 String、boolean、Map、JSONObject 等裸类型，应使用 Result<T> 包裹或定义 VO 返回。裸返回类型破坏了统一响应格式"
 
-# ═══════════════════════════════════════════════════════════════
-# 代码风格
-# ═══════════════════════════════════════════════════════════════
+# ── 数据库规范 ──
+
+BE-QL-19:
+  description: "业务表是否包含必备审计字段（id/createId/createName/createTime/updateId/updateName/updateTime/deleted）"
+  level: P1
+  ai:
+    prompt_hint: "检查建表 SQL 或 Entity 类，确认业务表是否包含 id、create_id、create_name、create_time、update_id、update_name、update_time、deleted 这 8 个必备审计字段。日志表、中间表可以不包含"
+
+BE-QL-20:
+  description: "主键是否使用 BIGINT + 雪花ID 策略"
+  level: P1
+  ai:
+    prompt_hint: "检查 Entity 类和建表 SQL，确认主键 id 字段是否为 BIGINT 类型（Java 中为 Long），并且是否配置了雪花ID 生成策略（MyBatis-Plus 的 @TableId(type = IdType.ASSIGN_ID)）。不使用自增主键"
+
+BE-QL-21:
+  description: "业务表是否加了 deleted 逻辑删除字段"
+  level: P1
+  ai:
+    prompt_hint: "检查建表 SQL 和 Entity 类，确认业务表是否包含 deleted 字段（TINYINT，默认 0），并且 Entity 是否添加了 @TableLogic 注解。日志表、中间表可以不包含"
+
+# ── 参数校验 ──
+
+BE-QL-31:
+  description: "DTO 字段的校验消息是否用了 {key} 占位符而非硬编码文本"
+  level: P1
+  ai:
+    prompt_hint: "检查 DTO 类中的校验注解（@NotNull、@NotBlank、@Size 等）的 message 属性，应使用 {key} 占位符引用国际化资源，而非直接写中文/英文文本。例如 message = \"{user.name.notblank}\" 而非 message = \"用户名不能为空\""
+
+BE-QL-32:
+  description: "@Schema.requiredMode 是否与校验注解（@NotNull 等）保持一致"
+  level: P2
+  ai:
+    prompt_hint: "检查 DTO/VO 字段上 @Schema 的 requiredMode 属性是否与校验注解同步。有 @NotNull/@NotBlank → requiredMode = REQUIRED，无校验注解 → requiredMode = NOT_REQUIRED。不一致会导致 Swagger 文档与代码行为不符"
+
+# ── 代码风格 ──
 
 BE-QL-34:
   description: "工具类是否 final + 私有构造 + 全部 static 方法"
   level: P2
   ai:
-    prompt_hint: "检查工具类（类名以 Util/Utils/Helper 结尾的类）是否声明为 final、是否有私有构造函数、所有方法是否都是 static"
+    prompt_hint: "检查类名以 Util/Utils/Helper 结尾的工具类，确认是否声明为 final，是否有私有构造函数，所有方法是否都是 static。工具类不应被实例化或继承"
 
 BE-QL-35:
   description: "集合返回值是否可能为 null"
   level: P1
   ai:
-    prompt_hint: "检查返回 List、Set、Map 等集合类型的方法，确保返回值不会为 null。方法应该返回空集合 new ArrayList<>() 或 Collections.emptyList() 而非 null"
+    prompt_hint: "检查返回 List、Set、Map 等集合类型的方法，确保返回值不会为 null。方法应该返回空集合（如 new ArrayList<>() 或 Collections.emptyList()）而非 null，避免调用方 NPE"
 
 BE-QL-36:
   description: "跨文件出现 2 次及以上的字符串/数字是否提取为常量"
   level: P2
   ai:
-    prompt_hint: "检查代码中是否有相同的字符串字面量或魔法数字在多个地方出现（>=2次），这些应该提取为常量类中定义"
+    prompt_hint: "检查代码中是否有相同的字符串字面量或魔法数字在多个地方出现（>=2 次），这些应该提取到常量类中统一管理。例如多处出现 \"active\"、\"0\" 等应定义常量"
 
 BE-QL-37:
   description: "有固定范围的状态/角色是否用了枚举而非字符串常量"
   level: P2
   ai:
-    prompt_hint: "检查表示状态、类型、角色的字段是否使用了字符串常量（如 \"active\"/\"disabled\"），应定义枚举类替代字符串常量"
+    prompt_hint: "检查表示状态、类型、角色的字段（如 status、type、role）是否使用了字符串常量（如 \"active\"/\"disabled\"）。应定义枚举类替代字符串常量，利用编译期类型检查避免拼写错误"
+
+BE-QL-39:
+  description: "循环内是否用 + 拼接字符串"
+  level: P2
+  ai:
+    prompt_hint: "检查 for/while 循环内是否存在使用 + 或 += 拼接字符串的代码。循环内字符串拼接应使用 StringBuilder，否则会创建大量中间 String 对象影响性能"
 
 BE-QL-41:
   description: "是否存在魔法数字"
   level: P2
   ai:
-    prompt_hint: "检查代码中是否存在未命名的魔法数字（如 if (status == 1)），应使用枚举或常量替代数字字面量"
+    prompt_hint: "检查代码中是否存在未命名的魔法数字（如 if (status == 1)、sleep(5000)）。应使用枚举或常量替代数字字面量，提高代码可读性"
 
-# ═══════════════════════════════════════════════════════════════
-# Mapper 专项
-# ═══════════════════════════════════════════════════════════════
+# ── Mapper 专项 ──
 
 BE-QL-46:
   description: "循环内是否逐条查数据库"
   level: P1
   ai:
-    prompt_hint: "检查是否存在在 for/while 循环体内调用 Mapper 方法逐条查询或操作数据库的代码，应使用批量方法或一次性查询替代"
+    prompt_hint: "检查是否存在在 for/while 循环体内调用 Mapper 方法逐条查询或操作数据库的代码。应使用批量方法（如 selectBatchIds、insertBatch）或一次性查询（selectList 用 IN 条件）替代"
+
+# ═══════════════════════════════════════════════════════════════
+# Infrastructure Review / 基础设施审查（13 项 AI 检查）
+# ═══════════════════════════════════════════════════════════════
+
+# ── Swagger ──
+
+BE-IN-06:
+  description: "@Schema.requiredMode 是否与校验注解一致"
+  level: P2
+  ai:
+    prompt_hint: "检查 DTO/VO 字段上 @Schema 的 requiredMode 属性是否与校验注解同步。有 @NotNull/@NotBlank → REQUIRED，无 → NOT_REQUIRED。不一致会导致文档误导前端开发者"
+
+# ── 配置管理 ──
+
+BE-IN-11:
+  description: "配置文件是否按环境拆分（application-dev/test/prod.yml）"
+  level: P2
+  ai:
+    prompt_hint: "检查 resources 目录下是否有 application-dev.yml、application-test.yml、application-prod.yml 等按环境拆分的配置文件。所有配置写在一个 application.yml 中不利于多环境管理"
+
+BE-IN-12:
+  description: "Nacos 地址是否通过环境变量注入"
+  level: P1
+  ai:
+    prompt_hint: "检查 Nacos 配置中的 server-addr 是否使用了 ${NACOS_ADDR:localhost:8848} 格式的环境变量占位符，而非硬编码 IP 地址。硬编码 IP 在不同环境部署时会出问题"
+
+BE-IN-13:
+  description: "数据库连接/Redis 连接是否错误地使用了 @RefreshScope"
+  level: P1
+  ai:
+    prompt_hint: "检查数据库连接、Redis 连接等中间件连接的配置 Bean 是否添加了 @RefreshScope。中间件连接的热刷新可能导致连接池泄漏，不应使用 @RefreshScope"
+
+BE-IN-14:
+  description: "Nacos 配置是否使用 Namespace 区分环境"
+  level: P2
+  ai:
+    prompt_hint: "检查 Nacos 配置中是否配置了 namespace 来区分 dev/test/prod 环境。不区分环境会导致所有环境共享同一套 Nacos 配置，存在环境隔离风险"
+
+# ── Redis ──
+
+BE-IN-16:
+  description: "Redis Key 命名是否使用 {项目}:{模块}:{类型}:{标识} 格式"
+  level: P2
+  ai:
+    prompt_hint: "检查 Redis Key 的命名是否符合 {项目}:{模块}:{类型}:{标识} 格式，分隔符用英文冒号 :。例如 user:auth:token:12345。不符合规范的 Key 难以管理和排查"
+
+BE-IN-17:
+  description: "Redis 缓存是否不设过期时间"
+  level: P1
+  ai:
+    prompt_hint: "检查 Redis 缓存操作是否设置了过期时间（expire 或 set 命令的 EX 参数）。长期不过期的缓存会导致内存持续增长，最终可能 OOM"
+
+BE-IN-18:
+  description: "Redis 是否存储了超过 10KB 的大对象"
+  level: P2
+  ai:
+    prompt_hint: "检查存入 Redis 的数据大小是否合理。超过 10KB 的大对象不适合放 Redis，应换用 OSS/MinIO 等对象存储。大对象会占用宝贵的内存空间并影响性能"
+
+BE-IN-19:
+  description: "是否在生产环境代码中使用 keys * 命令"
+  level: P1
+  ai:
+    prompt_hint: "检查代码中是否使用了 Redis 的 keys 命令（如 redisTemplate.keys(\"*\")）。生产环境数据量大时 keys 命令会阻塞 Redis，应使用 scan 命令替代"
+
+BE-IN-20:
+  description: "敏感信息是否明文存储到 Redis"
+  level: P1
+  ai:
+    prompt_hint: "检查存入 Redis 的数据是否包含密码、Token、身份证号等敏感信息。敏感信息不应明文存储在 Redis 中，应加密后存储或使用 Redis 的过期机制确保数据不会长期留存"
+
+# ── 文件上传安全 ──
+
+BE-IN-27:
+  description: "是否配置了全局文件大小限制（spring.servlet.multipart.max-file-size）"
+  level: P1
+  ai:
+    prompt_hint: "检查 application.yml 中是否配置了 spring.servlet.multipart.max-file-size 和 max-request-size。缺少全局大小限制可能导致大文件攻击"
+
+BE-IN-28:
+  description: "文件类型校验是否使用白名单（禁止黑名单）"
+  level: P1
+  ai:
+    prompt_hint: "检查文件上传代码中的类型校验逻辑。应使用白名单（允许的类型列表）而非黑名单（禁止的类型列表）。黑名单可以通过重命名等方式绕过"
+
+BE-IN-29:
+  description: "文件上传是否校验了文件魔数（文件头字节）"
+  level: P1
+  ai:
+    prompt_hint: "检查文件上传代码是否通过读取文件头字节（文件魔数/Magic Number）来验证文件真实类型。Content-Type 和文件扩展名可以被伪造，只有文件魔数是可靠的类型判断依据"
+
+# ── 国际化 ──
+
+BE-IN-23:
+  description: "国际化资源文件是否存在（ValidationMessages.properties + messages.properties）"
+  level: P1
+  ai:
+    prompt_hint: "检查 resources 目录下是否存在 ValidationMessages.properties（JSR303 校验消息）和 messages.properties（业务消息）两个国际化资源文件。缺少会导致校验消息和业务消息无法国际化"
+
+BE-IN-24:
+  description: "新增 BusinessErrorEnum 后是否在 zh_CN 和 en_US 两套资源中都添加了对应 key"
+  level: P1
+  ai:
+    prompt_hint: "检查新增的 BusinessErrorEnum 枚举值，确认 messages_zh_CN.properties 和 messages_en_US.properties 中是否都添加了对应的 key-value。只添加中文资源会导致英文环境下显示错误码而非友好提示"
+
+# ═══════════════════════════════════════════════════════════════
+# Auth Review / 认证审查（13 项 AI 检查）
+# ═══════════════════════════════════════════════════════════════
+
+BE-AU-03:
+  description: "多端场景下是否定义了 StpKit 门面类"
+  level: P1
+  ai:
+    prompt_hint: "检查是否定义了 StpKit 门面类，为各账号体系创建独立的 StpLogic 实例（如 USER、ADMIN）。多端场景下没有 StpKit 门面会导致账号体系混乱"
+
+BE-AU-04:
+  description: "StpKit 门面是否包含与业务场景匹配的 StpLogic"
+  level: P1
+  ai:
+    prompt_hint: "检查 StpKit 类中定义的 StpLogic 实例是否与项目的账号体系匹配。例如有用户端和管理端两套，StpKit 应定义 USER 和 ADMIN 两个 StpLogic。缺漏会导致某端无法正常工作"
+
+BE-AU-06:
+  description: "多端场景下登录是否分为独立 Controller"
+  level: P1
+  ai:
+    prompt_hint: "检查多端场景（如用户端 + 管理端）下，登录接口是否分为两个独立 Controller，URL 前缀不同（如 /api/user/auth 和 /api/admin/auth）。混在一个 Controller 中通过参数区分会导致拦截器配置复杂化"
+
+BE-AU-08:
+  description: "多端场景下登录后是否调用 StpKit.USER.login() 而非 StpUtil.login()"
+  level: P1
+  ai:
+    prompt_hint: "检查多端场景下的登录代码，登录成功后是否调用了 StpKit.USER.login(userId) 或 StpKit.ADMIN.login(adminId)，而非通用的 StpUtil.login()。使用 StpUtil 在多端场景下无法区分账号类型"
+
+BE-AU-09:
+  description: "多端场景下登出是否通过 LoginContextHolder.get() 而非硬编码 StpKit"
+  level: P1
+  ai:
+    prompt_hint: "检查登出接口代码，是否通过 LoginContextHolder.get() 获取当前请求对应的 StpLogic，而非硬编码 StpKit.USER 或 StpKit.ADMIN。硬编码会导致跨端登出失败"
+
+BE-AU-10:
+  description: "多端场景下登录时是否将用户名存入 Session（供 MetaObjectHandler 使用）"
+  level: P1
+  ai:
+    prompt_hint: "检查登录成功后是否将用户名（loginName）存入 Sa-Token Session，例如 StpUtil.getSession().set(\"username\", username)。MyBatis-Plus 的 MetaObjectHandler 自动填充审计字段时需要从 Session 获取当前用户"
+
+BE-AU-11:
+  description: "多端场景下管理端和用户端是否分别配置了独立拦截器"
+  level: P1
+  ai:
+    prompt_hint: "检查拦截器配置，多端场景下管理端和用户端是否分别注册了独立的 Sa-Token 拦截器，各自指定不同的 StpLogic 和路径匹配规则。共用拦截器无法正确区分两端的登录态"
+
+BE-AU-12:
+  description: "用户端拦截器是否正确排除了 /api/admin/** 路径"
+  level: P0
+  ai:
+    prompt_hint: "检查用户端拦截器的排除路径列表，确认是否排除了管理端的 /api/admin/** 路径。如果不排除，用户端拦截器可能会错误拦截管理端请求，或管理端请求通过用户端 StpLogic 校验导致权限混乱"
+
+BE-AU-13:
+  description: "多端拦截器在 checkLogin() 后是否立即调用 LoginContextHolder.set(stp)"
+  level: P1
+  ai:
+    prompt_hint: "检查多端场景的拦截器代码，在 checkLogin() 校验通过后是否立即调用 LoginContextHolder.set(stpLogic) 将当前端的 StpLogic 存入 ThreadLocal。缺少这一步会导致后续代码无法获取正确的 StpLogic"
+
+BE-AU-14:
+  description: "登录接口和白名单路径是否在拦截器中正确排除"
+  level: P1
+  ai:
+    prompt_hint: "检查拦截器的排除路径配置，确认登录接口、注册接口、Swagger 文档、静态资源等白名单路径是否都被正确排除。漏排会导致未登录用户无法访问登录页面，或 Swagger 文档不可用"
+
+BE-AU-20:
+  description: "多端场景下 Service 是否通过 LoginContextHolder.getUserId() 获取用户"
+  level: P1
+  ai:
+    prompt_hint: "检查 Service 层代码中获取当前登录用户的方式。多端场景下应使用 LoginContextHolder.getUserId() 而非直接 StpKit.USER.getLoginIdAsLong()。LoginContextHolder 能根据当前请求自动选择正确的端"
+
+BE-AU-24:
+  description: "Gateway 全局过滤器中是否遍历 StpKit 匹配 Token 而非硬编码"
+  level: P1
+  ai:
+    prompt_hint: "检查 Spring Cloud Gateway 的全局过滤器代码，Token 校验逻辑是否遍历 StpKit 中所有 StpLogic 实例来匹配 Token，而非硬编码只检查 StpKit.USER。硬编码会导致只有一端能通过 Gateway 鉴权"
+
+BE-AU-25:
+  description: "Gateway 过滤器是否将用户信息透传到下游 Header（X-User-Id/X-User-Name）"
+  level: P1
+  ai:
+    prompt_hint: "检查 Gateway 过滤器在校验 Token 后，是否将用户 ID 和用户名通过 X-User-Id、X-User-Name 等 Header 透传给下游微服务。下游服务需要这些 Header 来获取当前操作用户，不应重复解析 Token"
