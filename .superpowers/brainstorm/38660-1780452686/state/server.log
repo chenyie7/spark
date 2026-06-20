@@ -1,4 +1,0 @@
-{"type":"server-started","port":54934,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:54934","screen_dir":"/Users/chenyi/ai-project/workflow-agent-demo/.superpowers/brainstorm/38660-1780452686/content","state_dir":"/Users/chenyi/ai-project/workflow-agent-demo/.superpowers/brainstorm/38660-1780452686/state"}
-{"type":"screen-added","file":"/Users/chenyi/ai-project/workflow-agent-demo/.superpowers/brainstorm/38660-1780452686/content/upstream-context.html"}
-{"type":"screen-added","file":"/Users/chenyi/ai-project/workflow-agent-demo/.superpowers/brainstorm/38660-1780452686/content/project-manifest.html"}
-{"type":"server-stopped","reason":"idle timeout"}
