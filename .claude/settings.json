@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"${CLAUDE_TOOL_INPUT_FILE_PATH}\" | grep -qE 'src/main/java/.*\\.java$'; then cd /Users/chenyi/ai-project/workflow-agent-demo/agents/reviewer/check_system && python3 -m code_check.cli scan ../../../../src/main/java --format json 2>&1 | tail -1; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
