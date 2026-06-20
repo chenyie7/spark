@@ -53,20 +53,15 @@ nodes:
     prompt_template: |
       你是 review agent。请严格按以下步骤执行，不可跳过任何步骤。
 
-      调用 Skill("review", args="src/main/java") 执行双层代码审查。
+      1. 调用 Skill 工具执行 review：使用 skill="review", args="src/main/java"
+      2. /review 技能会自动完成程序预检（硬阻断）→ AI 语义检查 → 报告合并
+      3. 根据执行结果，返回以下三种状态之一：
 
-      /review 技能内部会：
-      - Step 1: 强制执行 Bash CLI 程序预检（python3 -m code_check.cli scan）
-      - Step 2: AI 语义检查（读取 ai-checklist.yaml，17 项规则）
-      - Step 3: 合并报告（python3 -m code_check.cli report）
-
-      执行完成后，你必须根据结果返回以下三种状态之一：
-
-      REVIEW_PASSED — 预检通过 + AI 检查完成，所有产物已生成
-      REVIEW_FAILED — 预检被阻断（P0>0），产物在 review-output/ 中
+      REVIEW_PASSED — 预检通过，AI 检查完成，所有产物已生成
+      REVIEW_FAILED — 预检被阻断（P0>0），或 AI 语义检查有 FAIL
       REVIEW_ERROR  — 环境/工具异常（python3 不可用、CLI 崩溃等）
 
-      你的最终回复必须且只能是这三种状态之一，不要返回其他内容。
+      你的最终回复必须且只能是这三种状态之一。
     inputs:
       - coder_output: "${coder.outputs.target_dir}"
     outputs:
