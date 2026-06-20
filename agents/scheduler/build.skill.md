@@ -15,7 +15,7 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
 
 ### Phase 0: 初始化
 
-1. 读取 `agents/scheduler/pipeline.yaml`，解析 `nodes` 和 `edges`。
+1. 读取 `agents/scheduler/pipeline.yaml`，解析 `nodes`（获取 coder/reviewer 的 prompt 模板和超时配置）和 `defaults`（获取 max_retries、block_on 等全局参数）。
 2. 从 YAML 中提取 `defaults.max_retries`（默认 3）和 `defaults.block_on`（默认 [P0]）。
 3. 初始化 `round = 0`。
 4. 如果用户输入为空或不明确（如「做个系统」），追问澄清后再启动。
@@ -32,6 +32,7 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
 1. 通过 `Agent` 工具启动 coder 子 Agent，subagent_type 使用 `general-purpose`。
 2. prompt 使用 `pipeline.yaml` 中 `coder.prompt_template`，`{requirement}` 替换为用户需求。首轮 `{review_context}` 为空字符串。
 3. 等待 coder 完成。
+4. → 进入 Phase 2
 
 **异常处理：**
 - coder 未生成任何 `.java` 文件 → 告知用户「未生成代码文件，流水线终止」，停止。
@@ -49,6 +50,7 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
    - `REVIEW_PASSED`
    - `REVIEW_FAILED`
    - `REVIEW_ERROR`
+5. → 进入 Phase 3
 
 **异常处理：**
 - review Agent 超时（参考 pipeline.yaml 中 reviewer 节点的 timeout: 600s） → 告知用户「审查超时」，停止。
