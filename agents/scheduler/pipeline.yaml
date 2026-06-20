@@ -65,9 +65,9 @@ nodes:
     inputs:
       - coder_output: "${coder.outputs.target_dir}"
     outputs:
-      - pre_check: "review-output/pre-check-result.json"
-      - ai_review: "review-output/review-result.json"
-      - final_report: "review-output/final-review-report.md"
+      - pre_check: "agents/reviewer/check_system/review-output/pre-check-result.json"
+      - ai_review: "agents/reviewer/check_system/review-output/review-result.json"
+      - final_report: "agents/reviewer/check_system/review-output/final-review-report.md"
     timeout: 600s
 
 # ── DAG 边 ──

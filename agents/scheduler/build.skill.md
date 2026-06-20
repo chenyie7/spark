@@ -58,7 +58,7 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
 根据 review Agent 的返回结果：
 
 **REVIEW_PASSED：**
-- ✅ 流水线成功！读取 `review-output/final-review-report.md` 并展示内容给用户。
+- ✅ 流水线成功！读取 `agents/reviewer/check_system/review-output/final-review-report.md` 并展示内容给用户。
 - 报告：「流水线完成，经过 {round} 轮。」
 
 **REVIEW_FAILED 且 round < max_retries：**
@@ -66,7 +66,7 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
 - 进入 Phase 4（coder 修复模式）。
 
 **REVIEW_FAILED 且 round >= max_retries：**
-- ❌ 超出最大轮次。读取 `review-output/final-review-report.md` 并展示内容。
+- ❌ 超出最大轮次。读取 `agents/reviewer/check_system/review-output/final-review-report.md` 并展示内容。
 - 报告：「已达最大轮次 {max_retries}，请手动介入修复。」
 
 **REVIEW_ERROR：**
@@ -83,9 +83,9 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
 ⚠️ 这是第 {round}/{max_retries} 轮修复。
 
 请先读取以下文件，了解上一轮审查发现的问题：
-1. review-output/pre-check-result.json — 程序预检结果（文件路径、行号、规则、级别、描述）
-2. review-output/review-result.json — AI 语义检查结果（如存在）
-3. review-output/pre-check-report.md — 预检报告（可读格式）
+1. agents/reviewer/check_system/review-output/pre-check-result.json — 程序预检结果（文件路径、行号、规则、级别、描述）
+2. agents/reviewer/check_system/review-output/review-result.json — AI 语义检查结果（如存在）
+3. agents/reviewer/check_system/review-output/pre-check-report.md — 预检报告（可读格式）
 
 然后逐个修复所有 P0 问题。修复原则：
 - 只修改有问题的文件和行，不动其他代码
