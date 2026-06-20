@@ -29,113 +29,126 @@
 
 ## 架构设计
 
-### 方案 C：`/build` 调度 `Skill("review")`，review 内部强制 Bash 预检
+### 核心思路
+
+| 角色 | 职责 | 不做什么 |
+|------|------|---------|
+| `/build` 主控 Agent | 启停 Agent、看 pass/fail、计轮次 | 不读 JSON、不验证产物、不构造问题详情 |
+| `Agent("coder")` | 写代码 / 读 `review-output/` 产物修复代码 | — |
+| `Agent("review")` | 内部调 `Skill("review")`，跑完返回 PASS 或 FAIL | — |
+| `Skill("review")` | Step 1 Bash CLI（强制）→ Step 2 AI 检查 → Step 3 合并报告 | — |
+
+**强制发生在 Skill 层**：`/review` 技能内部用 Bash 工具直接执行 Python CLI，不依赖 AI 自觉。
+
+**子进程隔离 + 通知**：`Agent` 工具天然提供子进程隔离，子 Agent 完成后结果返回父 Agent，父 Agent 根据 pass/fail 决定下一步。
+
+### 架构图
 
 ```
-/build 调度 Agent（薄，只编排）
+/build 主控 Agent（编排 + 计数，不碰产物文件）
   │
-  ├─ Phase 1: Agent("coder") → 产出 src/main/java/*.java
+  ├─ Phase 1: 启动 Agent("coder")
+  │     prompt: 写 Java 代码到 src/main/java/
+  │     coder 写完 → 返回
+  │     主控检查：有 .java 文件产出？
+  │       ├─ 无 → "未生成代码文件"，停止
+  │       └─ 有 → 继续
   │
-  ├─ Phase 2: Skill("review", args="src/main/java")
+  ├─ Phase 2: 启动 Agent("review")
   │     │
-  │     │  /review 技能内部：
-  │     │  ┌──────────────────────────────────────────┐
-  │     │  │ Step 1: Bash review-pre-hook.sh           │
-  │     │  │   python3 -m code_check.cli scan <path>   │
-  │     │  │   → exit 0: pre-check-result.json 已生成  │
-  │     │  │   → exit 1: pre-check-result.json + .md   │
-  │     │  │           （两个文件都已生成，CLI 默认行为） │
-  │     │  │           返回失败，/review 终止            │
-  │     │  │                                            │
-  │     │  │ Step 2: Agent("reviewer AI")              │
-  │     │  │   只做 AI 语义检查（17 项）                 │
-  │     │  │   读 ai-checklist.yaml + pre-check-result  │
-  │     │  │   输出 review-result.json                  │
-  │     │  │                                            │
-  │     │  │ Step 3: Bash review-post-hook.sh           │
-  │     │  │   合并报告 → final-review-report.md         │
-  │     │  └──────────────────────────────────────────┘
+  │     │  review Agent（子进程）内部：
+  │     │  ┌────────────────────────────────────────────┐
+  │     │  │ Skill("review", args="src/main/java")       │
+  │     │  │                                              │
+  │     │  │  /review 技能内部：                           │
+  │     │  │  Step 1: Bash review-pre-hook.sh             │
+  │     │  │    python3 -m code_check.cli scan <path>     │
+  │     │  │    → exit 0: pre-check-result.json 已生成    │
+  │     │  │    → exit 1: pre-check-result.json + .md     │
+  │     │  │           返回 "REVIEW_FAILED"               │
+  │     │  │                                              │
+  │     │  │  Step 2: AI 语义检查（仅 Step 1 通过时执行）  │
+  │     │  │    读 ai-checklist.yaml + pre-check-result   │
+  │     │  │    输出 review-result.json                   │
+  │     │  │                                              │
+  │     │  │  Step 3: Bash review-post-hook.sh            │
+  │     │  │    合并报告 → final-review-report.md          │
+  │     │  │    返回 "REVIEW_PASSED"                      │
+  │     │  └────────────────────────────────────────────┘
   │     │
-  │     └─ 返回结果给 /build
+  │     └─ 返回给主控：
+  │          "REVIEW_PASSED"  → P0=0, 无阻断
+  │          "REVIEW_FAILED"  → 有阻断，产物在 review-output/
+  │          "REVIEW_ERROR"   → 环境/工具异常
   │
-  ├─ Phase 3: 读取产物，判定
-  │     │
-  │     │ 读 pre-check-result.json → summary.p0_count
-  │     │ 读 review-result.json → summary.fail
-  │     │   ├─ p0=0 且 fail=0 → ✅ 完成
-  │     │   ├─ p0>0 且 round < max → 🔄 回 Phase 1（coder 修复）
-  │     │   ├─ fail>0 且 round < max → 🔄 回 Phase 1（coder 修复）
-  │     │   └─ round >= max → ❌ 超限，展示报告
-  │     │
-  │     └─（CLI 已在 exit 1 时输出 JSON，判定入口统一）
+  ├─ Phase 3: 主控判定
+  │     收到 review Agent 的返回结果：
+  │       ├─ "REVIEW_PASSED" → ✅ 展示 final-review-report.md，完成
+  │       ├─ "REVIEW_FAILED" + round < max_retries
+  │       │     → 🔄 round++，进入 Phase 4（coder 修复）
+  │       ├─ "REVIEW_FAILED" + round >= max_retries
+  │       │     → ❌ 展示报告，提示用户手动介入
+  │       └─ "REVIEW_ERROR" → 🛑 告知用户异常，停止
   │
-  └─ Phase 4（修复轮）: Agent("coder", review_context=问题列表)
+  └─ Phase 4（修复轮）: 启动 Agent("coder")
+        prompt 中包含：
+        - 原始需求
+        - 当前轮次 round/max_retries
+        - 引导 coder 自己去读 review-output/ 下的产物：
+          "请先读取 review-output/pre-check-result.json 和
+           review-output/review-result.json，了解上一轮审查
+           发现的问题，然后逐个修复。"
+        coder 修完 → 返回 → 回到 Phase 2 重新审查
 ```
 
 ### 关键设计点
 
-**强制发生在 Skill 层，不是 AI Agent 层。** `/review` 作为一个 Skill，在执行 AI 子 Agent 之前，先通过 Bash 工具直接执行 Python CLI。Bash 工具调用是确定性的，不依赖 AI 自觉。
-
-**调度 Agent 保持薄层。** `/build` 只知道"调用 review 技能"和"读 JSON 文件判断 P0"，不关心 review 内部如何执行预检。
-
-**产物文件作为 Agent 间契约。** coder → review → coder 之间通过 `review-output/` 下的 JSON 文件传递状态，不依赖内存或 prompt 透传。
-
----
-
-## 判定矩阵
-
-`/build` Phase 3 统一读 `pre-check-result.json` 做判定：
-
-| pre-check p0 | AI check fail | round < max | 动作 |
-|-------------|---------------|-------------|------|
-| 0 | 0 | - | ✅ 完成 |
-| 0 | >0 | Y | 🔄 回 coder（AI 问题） |
-| 0 | >0 | N | ❌ 超限，展示报告 |
-| >0 | - | Y | 🔄 回 coder（程序问题优先） |
-| >0 | - | N | ❌ 超限，展示报告 |
-
-> 注：CLI 在 exit 1 时已输出 `pre-check-result.json`（包含 p0_count），所以 Phase 3 始终可以统一读 JSON。不需要两套判定逻辑。
+1. **Agent + Skill 组合**：Agent 提供子进程隔离和通知机制；Skill 提供结构化的强制执行步骤。没有冲突。
+2. **主控极度薄**：只做启停、看 PASS/FAIL、计轮次。不读 JSON、不构造问题、不验证产物。如果 review 没有产出，告知用户即可，主控不自行为试图诊断。
+3. **Coder 自己读产物**：修复轮的 coder Agent 自己去读 `review-output/` 下的 JSON 文件，获取具体问题（文件、行号、规则、描述）。主控不代为提取和格式化。
+4. **产物文件作为 Agent 间契约**：coder → review → coder 之间通过 `review-output/` 下的文件传递状态。
+5. **通知格式极简**：review Agent 对主控只返回三种结果：PASSED / FAILED / ERROR。
 
 ---
 
-## 修复轮 Coder Prompt 模板
+## Review Agent 返回协议
 
-从 `pre-check-result.json` 和 `review-result.json` 中提取问题，格式化后填入 coder prompt：
+| 返回值 | 含义 | 产物状态 | 主控动作 |
+|--------|------|---------|---------|
+| `REVIEW_PASSED` | 预检通过，AI 检查完成 | pre-check-result.json + review-result.json + final-report.md 均存在 | 展示报告，完成 |
+| `REVIEW_FAILED` | 预检阻断（P0>0），或 AI 检查有 FAIL | review-output/ 下有对应产物 | round<max → 回 coder；否则超限 |
+| `REVIEW_ERROR` | 环境/工具异常（python3 不可用、CLI 崩溃等） | 产物可能不完整 | 告知用户，停止流水线 |
+
+---
+
+## 修复轮 Coder 行为
+
+修复轮的 coder Agent prompt 不同于首轮。首轮只包含需求，修复轮包含引导指令：
 
 ```
-{requirement}
+{原始需求}
 
-⚠️ 这是第 {round}/{max_retries} 轮修复。以下是上一轮审查发现的问题：
+⚠️ 这是第 {round}/{max_retries} 轮修复。
 
-## 程序预检问题（{p0_pre} 个 P0, {p1_pre} 个 P1）
+请先读取以下文件，了解上一轮审查发现的问题：
+1. review-output/pre-check-result.json — 程序预检结果（文件路径、行号、规则、级别、描述）
+2. review-output/review-result.json — AI 语义检查结果（如存在）
+3. review-output/pre-check-report.md — 预检报告（可读格式）
 
-| # | 文件 | 行号 | 方法 | 级别 | 规则 | 问题 |
-|---|------|------|------|------|------|------|
-| 1 | UserController.java | 42 | getUser | 🔴 P0 | PKG-001 | 包结构不符合规范 |
-| 2 | UserService.java | 15 | — | 🔴 P0 | INJ-001 | 未使用构造注入 |
-
-## AI 语义检查问题（{p0_ai} 个 FAIL）
-
-| # | 文件 | 行号 | 类别 | 规则 | 问题 | 建议 |
-|---|------|------|------|------|------|------|
-| 1 | UserController.java | 50 | quality | ERR-001 | 异常信息不规范 | 使用 BusinessException |
-
-## 修复原则
-1. 只修改上述有问题的文件和行，不动其他代码
-2. 修复后必须重新符合 agents/coder/ 下的所有规范
-3. 如果同一文件有多个问题，一次性全部修复
-4. 不确定的改动，加注释说明原因
+然后逐个修复所有 P0 问题。修复原则：
+- 只修改有问题的文件和行，不动其他代码
+- 修复后必须符合 agents/coder/ 下的所有规范
+- 同一文件有多个问题，一次性全部修复
+- 不确定的改动，加注释说明原因
 ```
 
-数据来源映射：
-- 程序预检问题 → `pre-check-result.json` 的 `file_reports[].findings[]`（字段：file, line, method, level, code, message）
-- AI 检查问题 → `review-result.json` 的 `items[]`（字段：file, line, category, code, evidence, suggestion）
+Coder Agent 自己读取 JSON，自己解析 file/line/code/message 字段，定位到具体问题。
 
 ---
 
 ## 数据模型（现有，无需改动）
 
-### pre-check-result.json 结构
+### pre-check-result.json 结构（CLI 默认输出，exit 0 或 exit 1 均生成）
 
 ```json
 {
@@ -165,9 +178,9 @@
 }
 ```
 
-> CLi 当前在 `output_format=json`（默认）时，无论 pass 或 fail 都会先写入该 JSON，再根据 passed 决定 exit code。行为无需修改。
+> CLI 在 `output_format=json`（默认）时，无论 pass 或 fail 都会先写入该 JSON，再根据 passed 决定 exit code。行为无需修改。
 
-### review-result.json 结构
+### review-result.json 结构（AI 检查输出）
 
 ```json
 {
@@ -183,41 +196,32 @@
 }
 ```
 
+Coder 从 `file_reports[].findings[]` 获取程序问题（file, line, method, level, code, message），从 `items[]` 获取 AI 问题（file, line, category, code, evidence, suggestion）。字段齐全，无需改动数据模型。
+
 ---
 
-## 错误处理矩阵
+## 错误处理
 
-### `/review` 内部错误
+### Review Agent 内部错误
 
-| 场景 | 表现 | 处理 |
-|------|------|------|
-| python3 不可用 | Step 1 exit 127 | `/review` 返回错误。`/build` 展示「需要 Python 3 环境」，停止流水线 |
-| 扫描路径无 .java 文件 | CLI exit 0，summary 文件数=0 | `/review` 返回警告。`/build` 判定 coder 未产出代码，回 coder |
-| CLI Python 异常崩溃 | exit 1，pre-check-result.json 未生成 | `/review` Step 1 检测 JSON 缺失 → 判定「CLI 异常」，终止。`/build` 展示 stderr，停止（工具问题，不循环） |
-| pre-check-result.json 格式异常 | JSON 存在但缺必要字段 | `/review` Step 2 做 schema 校验，失败 → 降级跳过 AI 检查，直接返回 pre-check 结果 |
-| reviewer AI 未生成 review-result.json | Step 2 完成但文件缺失 | `/review` Step 3 用 `--pre` only 生成报告。`/build` 只展示程序检查结果，不进入修复循环（AI 无产出不循环） |
-| reviewer AI 超时 | Step 2 > 600s | 保留已生成产物，`/build` 展示「审查超时」，停止 |
+| 场景 | Review Agent 返回 | 主控动作 |
+|------|------------------|---------|
+| python3 不可用 | `REVIEW_ERROR` | 告知「需要 Python 3 环境」，停止 |
+| 扫描路径无 .java 文件 | `REVIEW_ERROR` | 告知「未找到 Java 文件，coder 未产出」，停止 |
+| CLI Python 异常崩溃（JSON 未生成） | `REVIEW_ERROR` | 告知异常信息，停止（工具问题不循环） |
+| pre-check-result.json 格式异常 | `REVIEW_ERROR` | 告知格式异常，停止 |
+| AI 检查未生成 review-result.json | `REVIEW_FAILED`（仅有 pre-check 结果） | 正常走修复循环（coder 只修程序问题） |
+| AI 检查超时 | `REVIEW_ERROR` | 告知「审查超时」，停止 |
 
-### `/build` 调度层错误
+### 主控层错误
 
-| 场景 | 处理 |
-|------|------|
-| coder 未生成 .java 文件 | 不进入 Phase 2。告知用户，停止流水线 |
-| coder 子 Agent 超时（900s） | 告知用户超时，保留已生成文件，停止 |
-| Skill("review") 调用失败 | 环境问题→停止；代码问题→正常走修复循环 |
+| 场景 | 主控动作 |
+|------|---------|
+| coder 未生成 .java 文件 | 不进入 Phase 2，告知用户，停止 |
+| coder 子 Agent 超时（900s） | 告知超时，保留已生成文件，停止 |
 | 修复后 P0 不变/反增 | 继续循环，不特殊处理。max_retries 是唯一硬上限 |
-| max_retries 耗尽 | 展示最终报告，列出剩余 P0/P1，提示用户手动介入 |
-| 用户 Ctrl+C | 保留当前轮产物（review-output/），展示已完成轮次总结 |
-
-### 产物文件组合速查
-
-| pre-check-result.json | review-result.json | 含义 | 动作 |
-|----------------------|-------------------|------|------|
-| 存在，p0=0 | 存在，p0=0 | 全绿 | ✅ 完成 |
-| 存在，p0=0 | 存在，p0>0 | 程序OK，AI有建议 | 🔄 回 coder |
-| 存在，p0>0 | 存在 | 程序有问题 | 🔄 回 coder（优先程序问题） |
-| 存在，p0>0 | 不存在 | 程序有问题，AI未跑 | 🔄 回 coder（程序问题） |
-| 不存在 | - | CLI 异常崩溃 | 🛑 停止，报工具错误 |
+| max_retries 耗尽 | 展示 final-review-report.md，列出剩余问题，提示手动介入 |
+| 用户 Ctrl+C | 保留当前轮产物，展示已完成轮次总结 |
 
 ---
 
@@ -225,16 +229,16 @@
 
 | 文件 | 改动类型 | 改动内容 |
 |------|---------|----------|
-| `agents/scheduler/build.skill.md` | 重构 | Phase 2 改为 `Skill("review")` 调用；Phase 3 统一读 JSON 判定；新增修复轮 coder prompt 构造逻辑 |
-| `agents/scheduler/pipeline.yaml` | 更新 | reviewer 节点 prompt_template 去掉 CLI 指令，只保留 AI 语义检查 |
-| `agents/reviewer/review.skill.md` | 简化 | Step 1 Bash 保留，Step 2 AI Agent 保留，移除 `/review:on` 和 `/review:off` 用法说明 |
-| CLI/数据模型 | **不改** | 现有 `Finding`/`FileReport`/`ScanResult` 数据结构已满足需求，CLI 已在 exit 1 时输出 JSON |
+| `agents/scheduler/build.skill.md` | 重构 | Phase 2: `Agent("review")` 代替原 reviewer AI Agent；Phase 3: 根据 PASS/FAIL/ERROR 判定；Phase 4: coder 自己读产物修复 |
+| `agents/scheduler/pipeline.yaml` | 更新 | reviewer 节点更新为 review Agent prompt（内部调 Skill("review")） |
+| `agents/reviewer/review.skill.md` | 简化 | Step 1 Bash 保留；Step 2 AI Agent 保留；Step 3 合并报告保留；移除 `/review:on` 和 `/review:off` 用法说明 |
+| CLI/数据模型 | **不改** | `Finding`/`FileReport`/`ScanResult` 已满足需求，CLI 已输出 JSON on both pass and fail |
 
 ### 明确不改
 
 - `code-check-config.yaml` — 配置不变
 - `code_check/` 下的 Python 代码 — CLI 行为不变
-- `agents/reviewer/hooks/settings.template.json` — 保留文件，不在本文档范围内废弃
+- `agents/reviewer/hooks/settings.template.json` — 保留文件
 - `agents/coder/` — 规范文件不改
 - 不引入 Docker、不引入新组件
 
@@ -242,6 +246,8 @@
 
 ## 不做的事（YAGNI）
 
+- 不让主控读 JSON 或构造问题详情 — coder 自己读产物
+- 不让主控验证产物文件完整性 — review Agent 返回 ERROR 时直接告知用户
 - 不做自动合并修复（AI 自动修 pre-check 问题）— 必须回 coder 完整走一轮
 - 不做增量扫描 — 每轮全量扫描
 - 不做 P1 阻断 — 当前 `block_on: [P0]`，P1 记录但不触发修复循环
