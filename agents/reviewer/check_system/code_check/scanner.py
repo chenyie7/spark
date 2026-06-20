@@ -578,6 +578,16 @@ def scan_files(
     if isinstance(strategy, str):
         strategy = BlockingStrategy(strategy)
 
+    # Filter rules by strategy: loose skips P2 (style/docs), strict/normal run all
+    if strategy == BlockingStrategy.LOOSE:
+        active_rules = {
+            code: rule
+            for code, rule in rules.items()
+            if rule.get("level") in ("P0", "P1")
+        }
+    else:
+        active_rules = rules
+
     java_files = find_java_files(base_path, excludes)
     file_names = [f.name for f in java_files]
     breakdown = classify_files(file_names)
@@ -589,7 +599,7 @@ def scan_files(
         try:
             content = java_file.read_text(encoding="utf-8")
             all_hints.extend(_scan_for_hints(java_file, content))
-            findings = scan_single_file(java_file, rules)
+            findings = scan_single_file(java_file, active_rules)
         except (OSError, UnicodeDecodeError) as exc:
             findings = [
                 Finding(
