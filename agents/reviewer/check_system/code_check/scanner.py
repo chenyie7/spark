@@ -204,24 +204,103 @@ def _param_has_validated_with_group(params_str: str, param_name: str) -> bool:
     return False
 
 
+def _find_method_body_range(
+    lines: list[str], method_line: int
+) -> tuple[int | None, int | None]:
+    """Find the body range (start, end) of a method starting near *method_line*.
+
+    Searches for the opening ``{`` after the method signature (looking for
+    ``) {`` or ``){`` to avoid matching braces inside annotation strings like
+    ``@GetMapping("/{id}")``) and tracks brace depth to find the matching
+    closing ``}``.  Returns ``(None, None)`` if the body cannot be determined.
+    """
+    # Find the method signature's closing paren and opening brace.
+    # Look for ") {" or "){ " pattern to avoid false matches inside strings.
+    brace_line = None
+    for i in range(method_line - 1, len(lines)):
+        line = lines[i]
+        if re.search(r"\)\s*\{", line):
+            brace_line = i + 1  # 1-based line number
+            break
+
+    if brace_line is None:
+        # Fallback: search more loosely
+        for i in range(method_line - 1, len(lines)):
+            if "{" in lines[i]:
+                brace_line = i + 1
+                break
+
+    if brace_line is None:
+        return None, None
+
+    # Track brace depth from the position of the opening brace.
+    # Start counting from the brace itself, ignoring characters before it.
+    start_line = lines[brace_line - 1]
+    brace_pos = start_line.index("{")
+    depth = 0
+
+    for i in range(brace_line - 1, len(lines)):
+        line = lines[i]
+        start_idx = brace_pos if i == brace_line - 1 else 0
+        for j, ch in enumerate(line):
+            if j < start_idx:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return brace_line, i + 1  # 1-based end line
+
+    return brace_line, len(lines)  # fallback to end of file
+
+
 def _parse_params(params_str: str) -> list[dict]:
     """Parse a Java method's comma-separated parameter text into structured records.
 
     Each record has keys ``type``, ``name``, and ``annotations`` (list of annotation
     names without the leading ``@``).
+
+    Generic type parameters (e.g. ``List<Map<String, Integer>>``) are handled by
+    tracking angle-bracket depth so that commas inside generics are not treated
+    as parameter separators.
     """
     if not params_str.strip():
         return []
     params: list[dict] = []
-    for seg in params_str.split(","):
+
+    # Split by comma, respecting angle brackets
+    segments: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in params_str:
+        if ch == "<":
+            depth += 1
+        elif ch == ">":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            segments.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    if current:
+        segments.append("".join(current))
+
+    for seg in segments:
         seg = seg.strip()
         if not seg:
             continue
         annots = re.findall(r"@(\w+)", seg)
         clean = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", seg).strip()
-        parts = clean.split()
-        param_type = parts[0] if parts else ""
-        param_name = parts[1] if len(parts) > 1 else ""
+        # The last word is the parameter name, everything before is the type.
+        # This handles generic types like "Map<String, Integer> map".
+        parts = clean.rsplit(maxsplit=1)
+        if len(parts) == 2:
+            param_type, param_name = parts[0], parts[1]
+        elif len(parts) == 1:
+            param_type, param_name = parts[0], ""
+        else:
+            param_type, param_name = "", ""
         params.append({"type": param_type, "name": param_name, "annotations": annots})
     return params
 
@@ -413,7 +492,9 @@ class TextGrepScanner(BaseScanner):
 
     Also supports:
     - ``on_dir``: restrict to files in specific directories
+    - ``on_class``: restrict to files whose class annotation matches
     - ``on_file_pattern``: restrict to files matching a filename regex
+    - ``on_method_annotation``: restrict scan to methods with this annotation
     - ``must_match``: report when pattern is NOT found (inverse logic)
     """
 
@@ -428,6 +509,8 @@ class TextGrepScanner(BaseScanner):
         content = file_path.read_text(encoding="utf-8")
         lines = content.split("\n")
         file_name = file_path.name
+        class_anns = _get_class_annotations(content)
+        class_name = _get_class_name(content)
 
         for code, rule in my_rules.items():
             program = rule["program"]
@@ -435,6 +518,11 @@ class TextGrepScanner(BaseScanner):
             # ── on_dir filtering ──
             if "on_dir" in program:
                 if not _matches_on_dir(file_path, program["on_dir"]):
+                    continue
+
+            # ── on_class filtering ──
+            if "on_class" in program:
+                if not _on_class_matches(class_anns, class_name, program["on_class"]):
                     continue
 
             # ── on_file_pattern filtering ──
@@ -452,9 +540,17 @@ class TextGrepScanner(BaseScanner):
             level = Level(rule["level"])
             msg = rule["message"]
             must_match = program.get("must_match", False)
+            on_method_annotation = program.get("on_method_annotation", "")
 
-            if must_match:
-                # Inverse logic: report if pattern is NOT found anywhere
+            if on_method_annotation:
+                # ── Per-method scanning with annotation filter ──
+                findings.extend(
+                    self._scan_methods_by_annotation(
+                        content, lines, code, level, msg, program, on_method_annotation
+                    )
+                )
+            elif must_match:
+                # Inverse logic: report if pattern is NOT found anywhere in file
                 found = False
                 for lineno, line in enumerate(lines, 1):
                     if regex.search(line):
@@ -484,6 +580,82 @@ class TextGrepScanner(BaseScanner):
                                 line=lineno,
                                 message=msg,
                                 evidence=match.group().strip(),
+                            )
+                        )
+        return findings
+
+    @staticmethod
+    def _scan_methods_by_annotation(
+        content: str,
+        lines: list[str],
+        code: str,
+        level: Level,
+        msg: str,
+        program: dict,
+        on_method_annotation: str,
+    ) -> list[Finding]:
+        """Scan only methods annotated with *on_method_annotation*.
+
+        For each matching method, checks whether the pattern (with optional
+        ``must_match`` semantics) applies within the method body.
+        """
+        findings: list[Finding] = []
+        method_ann_regex = re.compile(on_method_annotation)
+        regex = re.compile(program["pattern"])
+        must_match = program.get("must_match", False)
+
+        methods = _find_methods(content)
+        for method in methods:
+            # Check if method has the required annotation
+            has_ann = any(
+                method_ann_regex.search(a) for a in method["annotations"]
+            )
+            if not has_ann:
+                continue
+
+            # Find method body range (from opening { to matching })
+            body_start, body_end = _find_method_body_range(
+                lines, method["line_num"]
+            )
+            if body_start is None:
+                continue
+
+            body_lines = lines[body_start - 1 : body_end]
+
+            if must_match:
+                # Pattern MUST exist in the method body
+                found = any(regex.search(line) for line in body_lines)
+                if not found:
+                    findings.append(
+                        Finding(
+                            code=code,
+                            level=level,
+                            line=method["line_num"],
+                            message=_safe_format(
+                                msg,
+                                {
+                                    "method": method["name"],
+                                    "class": "",
+                                    "class_": "",
+                                },
+                            ),
+                            evidence=f"方法 {method['name']} 缺少: {program['pattern']}",
+                            method=method["name"],
+                        )
+                    )
+            else:
+                # Report each matching line in the method body
+                for i, line in enumerate(body_lines):
+                    match = regex.search(line)
+                    if match:
+                        findings.append(
+                            Finding(
+                                code=code,
+                                level=level,
+                                line=body_start + i,
+                                message=msg,
+                                evidence=match.group().strip(),
+                                method=method["name"],
                             )
                         )
         return findings
@@ -1079,28 +1251,30 @@ class FileNamingScanner(BaseScanner):
             # ── must_be_in_root_package ──
             if program.get("must_be_in_root_package"):
                 # Check if file is directly in one of the top-level package dirs
-                # The file's parent dir relative to base_path should not have
-                # subdirs that look like packages
                 parent = file_path.parent
                 sibling_dirs = [
                     d
                     for d in parent.iterdir()
                     if d.is_dir() and not d.name.startswith(".")
                 ]
-                # If parent has standard package subdirs (controller, service, etc),
-                # then this file IS in the root package — that's correct
                 std_names = {"controller", "service", "mapper", "entity", "dto", "vo"}
-                if not any(d.name in std_names for d in sibling_dirs):
-                    # We're in a sub-package — this file should be in root
-                    findings.append(
-                        Finding(
-                            code=code,
-                            level=level,
-                            line=0,
-                            message=msg,
-                            evidence=f"{file_name} 不在根包下 (当前路径: {file_path.parent})",
+                has_std_siblings = any(d.name in std_names for d in sibling_dirs)
+
+                if not has_std_siblings:
+                    # Check if parent itself IS a standard subdir (e.g. controller/)
+                    # — then the file is in a sub-package, not root
+                    if parent.name in std_names:
+                        findings.append(
+                            Finding(
+                                code=code,
+                                level=level,
+                                line=0,
+                                message=msg,
+                                evidence=f"{file_name} 不在根包下 (当前路径: {file_path.parent})",
+                            )
                         )
-                    )
+                    # else: project may be new (no subdirs created yet),
+                    # don't report false positive
                 continue
 
             # ── must_not_match: inverse logic ──

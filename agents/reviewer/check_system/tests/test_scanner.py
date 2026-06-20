@@ -1676,3 +1676,200 @@ class TestGetFieldsLineNumbers:
         # Line numbers should be positive and reasonable
         for name, lineno in names_and_lines.items():
             assert lineno > 0, f"{name} line {lineno} should be > 0"
+
+
+# ── BE-QL-15: TextGrepScanner on_class + on_method_annotation ───
+
+JAVA_CONTROLLER_WRITE_METHODS = """
+package com.example.controller;
+
+import org.springframework.web.bind.annotation.*;
+import com.example.common.Result;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @PostMapping
+    public Result<Void> createUser(@RequestBody CreateUserDTO dto) {
+        return Result.success();
+    }
+
+    @PutMapping("/{id}")
+    public Result<Void> updateUser(@PathVariable Long id, @RequestBody UpdateUserDTO dto) {
+        return Result.success();
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> deleteUser(@PathVariable Long id) {
+        return Result.success(id);
+    }
+
+    @GetMapping("/{id}")
+    public Result<UserVO> getUser(@PathVariable Long id) {
+        return Result.success(new UserVO());
+    }
+}
+"""
+
+JAVA_CONTROLLER_MISSING_RESULT_SUCCESS = """
+package com.example.controller;
+
+import org.springframework.web.bind.annotation.*;
+import com.example.common.Result;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @PostMapping
+    public Result<Void> createUser(@RequestBody CreateUserDTO dto) {
+        return Result.success(dto);
+    }
+
+    @PutMapping("/{id}")
+    public Result<Void> updateUser(@PathVariable Long id, @RequestBody UpdateUserDTO dto) {
+        return Result.success("ok");
+    }
+}
+"""
+
+
+class TestTextGrepOnClassAndMethodAnnotation:
+    """BE-QL-15: TextGrepScanner with on_class + on_method_annotation + must_match."""
+
+    def test_on_class_filters_by_annotation(self, tmp_path):
+        """on_class should restrict to files with matching class annotations."""
+        f = _temp_java_file(tmp_path, JAVA_WITH_AUTOWIRED)
+        rules = {
+            "BE-QL-15": {
+                "description": "写操作应返回 Result.success()",
+                "level": "P2",
+                "program": {
+                    "scanner": "text-grep",
+                    "on_class": "RestController|Controller",
+                    "pattern": "@Autowired",
+                },
+                "message": "test",
+            }
+        }
+        findings = TextGrepScanner().scan(f, rules)
+        # Service class doesn't have @RestController → skipped
+        assert len(findings) == 0
+
+    def test_on_method_annotation_must_match_finds_correct_methods(self, tmp_path):
+        """must_match with on_method_annotation checks each annotated method."""
+        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_WRITE_METHODS)
+        rules = {
+            "BE-QL-15": {
+                "description": "写操作应返回 Result.success() 无 data",
+                "level": "P2",
+                "program": {
+                    "scanner": "text-grep",
+                    "on_class": "RestController|Controller",
+                    "on_method_annotation": "PostMapping|PutMapping|DeleteMapping",
+                    "pattern": r"return\s+Result\.success\(\s*\)",
+                    "must_match": True,
+                },
+                "message": "{method} 应使用 Result.success() 无 data 返回",
+            }
+        }
+        findings = TextGrepScanner().scan(f, rules)
+        # deleteUser returns Result.success(id) — not empty → finding
+        assert len(findings) == 1
+        assert findings[0].method == "deleteUser"
+
+    def test_on_method_annotation_must_match_all_pass(self, tmp_path):
+        """When all annotated methods have the pattern, no findings."""
+        content = """package com.example.controller;
+@RestController
+public class UserController {
+    @PostMapping
+    public Result create() {
+        return Result.success();
+    }
+    @DeleteMapping
+    public Result delete() {
+        return Result.success();
+    }
+}
+"""
+        f = _temp_java_file(tmp_path, content)
+        rules = {
+            "BE-QL-15": {
+                "description": "写操作应返回 Result.success() 无 data",
+                "level": "P2",
+                "program": {
+                    "scanner": "text-grep",
+                    "on_class": "RestController|Controller",
+                    "on_method_annotation": "PostMapping|DeleteMapping",
+                    "pattern": r"return\s+Result\.success\(\s*\)",
+                    "must_match": True,
+                },
+                "message": "{method} 应使用 Result.success() 无 data 返回",
+            }
+        }
+        findings = TextGrepScanner().scan(f, rules)
+        assert len(findings) == 0
+
+    def test_missing_both_patterns_reports_all(self, tmp_path):
+        """All annotated methods missing pattern → all reported."""
+        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_MISSING_RESULT_SUCCESS)
+        rules = {
+            "BE-QL-15": {
+                "description": "写操作应返回 Result.success() 无 data",
+                "level": "P2",
+                "program": {
+                    "scanner": "text-grep",
+                    "on_class": "RestController|Controller",
+                    "on_method_annotation": "PostMapping|PutMapping",
+                    "pattern": r"return\s+Result\.success\(\s*\)",
+                    "must_match": True,
+                },
+                "message": "{method} 应使用 Result.success() 无 data 返回",
+            }
+        }
+        findings = TextGrepScanner().scan(f, rules)
+        assert len(findings) == 2
+        method_names = {f.method for f in findings}
+        assert "createUser" in method_names
+        assert "updateUser" in method_names
+
+
+# ── P2-8: Generic type params parsing ───────────────────────────
+
+from code_check.scanner import _parse_params
+
+
+class TestParseParamsGenerics:
+    """P2-8: _parse_params should handle generic type parameters."""
+
+    def test_simple_params(self):
+        """Simple parameters without generics."""
+        params = _parse_params("String name, Integer age")
+        assert len(params) == 2
+        assert params[0]["type"] == "String"
+        assert params[0]["name"] == "name"
+
+    def test_generic_param(self):
+        """Single generic parameter."""
+        params = _parse_params("List<CreateUserDTO> dtos")
+        assert len(params) == 1
+        assert params[0]["type"] == "List<CreateUserDTO>"
+        assert params[0]["name"] == "dtos"
+
+    def test_nested_generic_param(self):
+        """Nested generic parameters with commas inside angle brackets."""
+        params = _parse_params("Map<String, Integer> map, String name")
+        assert len(params) == 2
+        assert params[0]["type"] == "Map<String, Integer>"
+        assert params[0]["name"] == "map"
+        assert params[1]["name"] == "name"
+
+    def test_annotated_generic_param(self):
+        """Generic param with annotations."""
+        params = _parse_params("@Valid List<CreateUserDTO> dtos")
+        assert len(params) == 1
+        assert params[0]["type"] == "List<CreateUserDTO>"
+        assert params[0]["name"] == "dtos"
+        assert "Valid" in params[0]["annotations"]

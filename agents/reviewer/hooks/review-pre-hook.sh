@@ -19,14 +19,14 @@ CONFIG_FILE="$CHECK_SYSTEM_DIR/code-check-config.yaml"
 # ─────────────────────────────────────────────────────────────
 # 从 YAML 配置读取默认扫描路径；命令行参数优先
 CONFIG_PATH=$(python3 -c "
-import yaml
+import yaml, sys
 try:
-    with open('$CONFIG_FILE') as f:
+    with open(sys.argv[1]) as f:
         c = yaml.safe_load(f)
     print(c.get('default_scan_path', 'src/main/java'))
 except Exception:
     print('src/main/java')
-" 2>/dev/null)
+" "$CONFIG_FILE" 2>/dev/null)
 
 TARGET_PATH="${1:-${REVIEW_TARGET_PATH:-$CONFIG_PATH}}"
 

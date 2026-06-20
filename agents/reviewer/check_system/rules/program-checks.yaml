@@ -223,7 +223,10 @@ BE-QL-09:
   level: P0
   program:
     scanner: text-grep
+    # 注意: token 关键词可能对 "token 已过期" 等合法日志产生误报，
+    # 已添加常见安全短语排除。程序预检标记后由 AI 审查员做语义判断。
     pattern: "log\\.(info|warn|debug|error|trace)\\s*\\(.*(password|passwd|token|phone|mobile|idCard|idNumber|secret|apiKey)"
+    no_match_in_same_line: "(token\\s*(已过期|格式|验证|校验|过期|失效)|一次性\\s*token)"
     context_lines: 1
   message: "日志中包含敏感信息"
 
