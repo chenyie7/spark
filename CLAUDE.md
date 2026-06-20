@@ -17,6 +17,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 开发流程
 
+🚀 **一键流程**：`/build <需求描述>` — 自动执行 阶段1→阶段2→修复循环  
+  入口：`agents/scheduler/build.skill.md`
+
 ```
 阶段 1（coder）：按设计文档 + 架构规范生成 Java 代码
   入口：agents/coder/README.md
