@@ -23,6 +23,7 @@ DEFAULT_CLI_CONFIG: dict[str, Any] = {
     "strategy": BlockingStrategy.STRICT,
     "output_dir": "./review-output/",
     "format": "json",
+    "default_scan_path": "src/main/java",
     "exclude": [],
 }
 
@@ -57,7 +58,7 @@ def load_cli_config(config_path: Path | None = None) -> dict[str, Any]:
         return config
 
     # Map yaml values — only override if present
-    for key in ("rules_dir", "output_dir", "format"):
+    for key in ("rules_dir", "output_dir", "format", "default_scan_path"):
         if key in file_data:
             config[key] = file_data[key]
 

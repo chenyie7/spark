@@ -99,7 +99,9 @@ def cmd_scan(args):
     output_format = args.format or config["format"]
     config["strategy"] = strategy
     rules_dir = Path(rules_dir)
-    target = Path(args.path)
+
+    scan_path = args.path or config.get("default_scan_path", "src/main/java")
+    target = Path(scan_path)
 
     if not target.exists():
         print(f"Error: path not found: {target}", file=sys.stderr)
@@ -162,7 +164,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_scan = sub.add_parser("scan", help="Run program pre-check scan")
-    p_scan.add_argument("path", help="Target directory to scan")
+    p_scan.add_argument("path", nargs="?", default=None, help="Target directory to scan (default: from config)")
     p_scan.add_argument("--rules-dir", help="Path to check-rules/ directory")
     p_scan.add_argument("--strategy", choices=["strict", "normal", "loose"], help="Blocking strategy")
     p_scan.add_argument("--format", choices=["json", "md"], help="Output format")
