@@ -1,0 +1,108 @@
+# pipeline.yaml
+# Coder-Reviewer 流水线 DAG 配置
+# 调度 Agent 读取本文件获取节点和边的定义，按拓扑顺序执行。
+
+name: coder-reviewer-pipeline
+version: "1.0"
+description: "标准 coder → reviewer 代码生成流水线，含 P0 修复循环"
+
+# ── 全局默认值 ──
+# 调度 Agent 在启动每个节点时使用这些默认值，节点可覆盖。
+defaults:
+  timeout: 600s          # 单节点默认超时（秒）
+  max_retries: 3         # reviewer → coder 最大循环轮次
+  block_on: [P0]         # 触发回退的严重级别列表
+
+# ── DAG 节点 ──
+# 每个节点对应一个 Agent。调度 Agent 按 edges 定义的顺序逐个执行。
+nodes:
+  - id: coder
+    type: agent
+    agent: coder
+    description: "根据需求生成 Spring Boot 3 Java 代码，遵守 agents/coder/ 下的所有规范"
+    prompt_template: |
+      你需要根据用户需求生成 Java 代码。
+
+      用户需求：
+      {requirement}
+
+      你必须遵守以下规范（读取 agents/coder/README.md 获取完整索引）：
+      - 包结构：controller → service/impl → mapper → entity/dto/vo
+      - 返回值：统一 Result<T>
+      - 注入：构造注入 @RequiredArgsConstructor，不用 @Autowired 字段注入
+      - 日志：@Slf4j，不打敏感信息
+      - 异常：抛 BusinessException，不写自由文本
+      - SQL：简单查 LambdaQueryWrapper，复杂/联表/子查询走 XML，禁用 @Select
+      - 参数：>3 个收敛到 DTO
+      - URL：RESTful 复数名词，CRUD 不用动词
+
+      {review_context}
+
+      将生成的 Java 代码写入 src/main/java 对应包路径下。
+    inputs:
+      - requirement: "${user_input}"
+      - review_context: "review-output/ 目录下的审查结果（仅修复轮次时存在）"
+    outputs:
+      - target_dir: "src/main/java"
+    timeout: 900s
+
+  - id: reviewer
+    type: agent
+    agent: reviewer
+    description: "对 coder 产出的代码执行双层审查：Layer 1 Python CLI 预检 + Layer 2 AI 语义检查"
+    prompt_template: |
+      对 {coder_output} 目录下的 Java 代码执行双层代码审查。
+
+      Layer 1 — 程序预检（零 AI Token）：
+      1. 进入 agents/reviewer/check_system 目录
+      2. 执行 python3 -m code_check.cli scan {coder_output}
+      3. exit 0 → 继续 Layer 2
+      4. exit 1 → 输出阻断报告 review-output/pre-check-report.md
+
+      Layer 2 — AI 语义检查：
+      1. 读取 agents/reviewer/check_system/rules/ai-checklist.yaml（17 项语义规则）
+      2. 读取 review-output/pre-check-result.json 获取预检线索
+      3. 逐项检查并输出 review-result.json
+
+      合并报告：
+      执行 python3 -m code_check.cli report \
+        --pre review-output/pre-check-result.json \
+        --ai review-output/review-result.json \
+        --output review-output/final-review-report.md
+    inputs:
+      - coder_output: "${coder.outputs.target_dir}"
+    outputs:
+      - pre_check: "review-output/pre-check-result.json"
+      - ai_review: "review-output/review-result.json"
+      - final_report: "review-output/final-review-report.md"
+    timeout: 600s
+
+# ── DAG 边 ──
+# 调度 Agent 按以下规则决定流转：
+#   1. coder 成功后 → reviewer
+#   2. reviewer 完成后 → 读取 pre-check-result.json 的 P0 数量
+#   3. P0 > 0 且未达 max_retries → 回到 coder（修复模式）
+#   4. P0 = 0 或达到 max_retries → DONE
+edges:
+  - from: coder
+    to: reviewer
+    trigger: on_success
+    description: "coder 生成代码后，进入 reviewer 审查"
+
+  - from: reviewer
+    to: coder
+    trigger: on_condition
+    condition:
+      field: "${reviewer.outputs.pre_check}.summary.p0_count"
+      operator: gt
+      value: 0
+    description: "存在 P0 问题，回到 coder 修复。调度 Agent 需额外检查 round < max_retries"
+
+  - from: reviewer
+    to: DONE
+    trigger: on_condition
+    condition:
+      field: "${reviewer.outputs.pre_check}.summary.p0_count"
+      operator: eq
+      value: 0
+    description: "P0 清零，流水线成功结束。调度 Agent 展示 final-review-report.md"
