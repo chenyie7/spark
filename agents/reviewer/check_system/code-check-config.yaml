@@ -7,7 +7,7 @@ rules_dir: rules/
 strategy: strict
 
 # 输出目录
-output_dir: ./review-output/
+output_dir: ../../../review-output/
 
 # 输出格式（scan 命令默认输出）：json | md
 format: json
