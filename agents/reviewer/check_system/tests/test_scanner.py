@@ -1,72 +1,126 @@
-"""Tests for Java file scanner engine."""
+"""Tests for JavaAstScanner and retained scanners."""
 
 import pytest
 from pathlib import Path
 from code_check.scanner import (
     scan_files,
     scan_single_file,
-    TextGrepScanner,
-    JavaAnnotationScanner,
-    JavaReturnTypeScanner,
+    JavaAstScanner,
+    PackageStructureScanner,
+    FileNamingScanner,
+    ConfigCheckScanner,
     classify_files,
     should_exclude,
     is_blocked,
+    SCANNERS,
+    _any_match,
+    _find_nested_yaml,
+    _matches_on_dir,
 )
-from code_check.models import Level, BlockingStrategy, Finding, ScanResult
+from code_check.models import Level, BlockingStrategy, Finding
 
 
-# ── Test Data ───────────────────────────────────────────────────
+# ── Test Java Sources ──
+
+JAVA_CONTROLLER_WITH_AUTOWIRED = """
+package com.example.controller;
+
+import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.example.service.UserService;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+}
+"""
+
+JAVA_INTERFACE_SERVICE = """
+package com.example.service;
+
+import com.example.vo.UserVO;
+
+public interface UserService {
+    UserVO getUser(Long id);
+}
+"""
+
+JAVA_SERVICE_WITH_SLF4J = """
+package com.example.service.impl;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class UserServiceImpl {
+    public void doSomething() {
+        log.info("processing");
+    }
+}
+"""
+
+JAVA_SERVICE_WITHOUT_SLF4J = """
+package com.example.service.impl;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class UserServiceImpl {
+    public void doSomething() {
+    }
+}
+"""
+
+JAVA_DTO_WITH_SCHEMA = """
+package com.example.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
+
+public class RegisterDTO {
+
+    @Schema(description = "用户名")
+    @NotBlank
+    private String username;
+
+    @Schema(description = "密码")
+    @NotBlank
+    private String password;
+
+    private static final int USERNAME_MIN_LENGTH = 3;
+}
+"""
+
+JAVA_DTO_WITHOUT_SCHEMA = """
+package com.example.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+public class LoginDTO {
+
+    @NotBlank
+    private String username;
+
+    @NotBlank
+    private String password;
+}
+"""
 
 JAVA_WITH_SYSOUT = """
 package com.example;
 
-public class UserService {
-    public void doSomething() {
+public class DebugService {
+    public void debug() {
         System.out.println("debug info");
-        System.err.println("error debug");
-    }
-}
-"""
-
-JAVA_WITH_VALID_CONTROLLER = """
-package com.example.controller;
-
-import org.springframework.web.bind.annotation.*;
-import com.example.common.Result;
-import jakarta.validation.Valid;
-import com.example.dto.CreateUserDTO;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @PostMapping
-    public Result<Void> createUser(@Valid CreateUserDTO dto) {
-        return Result.success();
-    }
-}
-"""
-
-JAVA_WITHOUT_VALID = """
-package com.example.controller;
-
-import org.springframework.web.bind.annotation.*;
-import com.example.common.Result;
-import com.example.dto.CreateUserDTO;
-import com.example.dto.UpdateUserDTO;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @PostMapping
-    public Result<Void> createUser(CreateUserDTO dto) {
-        return Result.success();
-    }
-
-    @PutMapping
-    public Result<Void> updateUser(UpdateUserDTO dto) {
-        return Result.success();
+        System.err.println("error info");
     }
 }
 """
@@ -88,37 +142,200 @@ public class UserController {
 }
 """
 
-JAVA_WITH_AUTOWIRED = """
-package com.example.service.impl;
+JAVA_WITH_RESULT_RETURN = """
+package com.example.controller;
 
-import com.example.mapper.UserMapper;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.*;
+import com.example.common.Result;
+import com.example.dto.UserVO;
 
-@Service
-public class UserServiceImpl {
+@RestController
+@RequestMapping("/users")
+public class UserController {
 
-    @Autowired
-    private UserMapper userMapper;
-
-    public void process() {
-        userMapper.selectById(1L);
+    @GetMapping("/{id}")
+    public Result<UserVO> getUser(@PathVariable Long id) {
+        return Result.success(new UserVO());
     }
 }
 """
 
-JAVA_WITH_FORBIDDEN_LOMBOK = """
-package com.example.service;
+JAVA_ENTITY_WITH_TABLE_LOGIC = """
+package com.example.entity;
 
-import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
 
-@Slf4j
-public class FileService {
+@Data
+@TableName("user")
+public class UserEntity {
+    private Long id;
+    private String username;
 
-    @SneakyThrows
-    public void readFile() {
-        throw new Exception("fail");
+    @TableLogic
+    private Integer deleted;
+}
+"""
+
+JAVA_ENTITY_WITHOUT_TABLE_LOGIC = """
+package com.example.entity;
+
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+@Data
+@TableName("user")
+public class UserEntity {
+    private Long id;
+    private String username;
+    private Integer deleted;
+}
+"""
+
+JAVA_WITH_BCRYPT = """
+package com.example.service.impl;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class UserServiceImpl {
+
+    private final BCryptPasswordEncoder passwordEncoder;
+
+    public void register(String password) {
+        String encoded = passwordEncoder.encode(password);
+    }
+}
+"""
+
+JAVA_WITHOUT_BCRYPT = """
+package com.example.service.impl;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class UserServiceImpl {
+    public void register(String password) {
+        String encoded = password;
+    }
+}
+"""
+
+JAVA_CONSTANT_CLASS = """
+package com.example.common;
+
+public final class ErrorCodes {
+    private ErrorCodes() {}
+
+    public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
+    public static final String PASSWORD_ERROR = "PASSWORD_ERROR";
+}
+"""
+
+JAVA_BAD_CONSTANT_CLASS = """
+package com.example.common;
+
+public class ErrorCodes {
+    public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
+}
+"""
+
+JAVA_MAPPER_WITH_PARAM = """
+package com.example.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.example.entity.UserEntity;
+import org.apache.ibatis.annotations.Param;
+
+public interface UserMapper extends BaseMapper<UserEntity> {
+    UserEntity selectByUsernameAndStatus(
+        @Param("username") String username,
+        @Param("status") Integer status
+    );
+}
+"""
+
+JAVA_MAPPER_WITHOUT_PARAM = """
+package com.example.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.example.entity.UserEntity;
+
+public interface UserMapper extends BaseMapper<UserEntity> {
+    UserEntity selectByUsernameAndStatus(String username, Integer status);
+}
+"""
+
+JAVA_CONTROLLER_WITH_TAG = """
+package com.example.controller;
+
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.*;
+
+@Tag(name = "用户管理")
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @GetMapping("/{id}")
+    public String getUser(@PathVariable Long id) {
+        return "user";
+    }
+}
+"""
+
+JAVA_WITH_VALUE_ANNOTATION = """
+package com.example.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+@Component
+public class AppConfig {
+    @Value("${app.secret}")
+    private String secret;
+}
+"""
+
+JAVA_CONTROLLER_POST_RESULT = """
+package com.example.controller;
+
+import org.springframework.web.bind.annotation.*;
+import com.example.common.Result;
+import com.example.dto.CreateUserDTO;
+import jakarta.validation.Valid;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @PostMapping
+    public Result<Void> createUser(@Valid CreateUserDTO dto) {
+        return Result.success();
+    }
+}
+"""
+
+JAVA_CONTROLLER_POST_BAD_RESULT = """
+package com.example.controller;
+
+import org.springframework.web.bind.annotation.*;
+import com.example.common.Result;
+import com.example.dto.CreateUserDTO;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @PostMapping
+    public Result<Void> createUser(CreateUserDTO dto) {
+        return Result.success("创建成功");
     }
 }
 """
@@ -133,144 +350,399 @@ def _temp_java_file(tmp_path, content, name="Test.java"):
     return p
 
 
-def _mock_rules_for_sysout():
-    return {
-        "BE-QL-07": {
-            "description": "System.out/err",
-            "level": "P1",
-            "program": {
-                "scanner": "text-grep",
-                "pattern": "System\\.(out|err)\\.print",
-            },
-            "message": "{method} 使用 System.out/err，应使用 @Slf4j log",
+# ═══════════════════════════════════════════════════════════════
+# JavaAstScanner Tests
+# ═══════════════════════════════════════════════════════════════
+
+class TestJavaAstClassChecks:
+
+    def test_autowired_field_detected(self, tmp_path):
+        """BE-ST-22: @Autowired field injection should be detected."""
+        rules = {
+            "BE-ST-22": {
+                "level": "P1",
+                "message": "{class} 使用了 @Autowired",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "field",
+                    "forbid_field_annotation": "@Autowired"
+                }
+            }
         }
-    }
+        file_path = tmp_path / "UserController.java"
+        file_path.write_text(JAVA_CONTROLLER_WITH_AUTOWIRED)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 1
+        assert findings[0].code == "BE-ST-22"
 
-
-def _mock_rules_for_validated():
-    return {
-        "BE-QL-29": {
-            "description": "DTO 参数缺少 @Validated",
-            "level": "P1",
-            "program": {
-                "scanner": "java-annotation",
-                "on_class": "RestController|Controller",
-                "target": "method_param",
-                "match_param_type": "DTO",
-                "missing_annotation": "@Validated|@Valid",
-            },
-            "message": "{method} 缺少 @Validated/@Valid 注解 DTO 参数",
+    def test_required_args_constructor_skips_interface(self, tmp_path):
+        """BE-ST-23: Interface should NOT be flagged for @RequiredArgsConstructor."""
+        rules = {
+            "BE-ST-23": {
+                "level": "P1",
+                "message": "{class} 应使用 @RequiredArgsConstructor",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "class",
+                    "on_class_annotation": "Service|ServiceImpl",
+                    "skip_interface": True,
+                    "required_class_annotation": "@RequiredArgsConstructor"
+                }
+            }
         }
-    }
+        iface_path = tmp_path / "UserService.java"
+        iface_path.write_text(JAVA_INTERFACE_SERVICE)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(iface_path, rules)
+        assert len(findings) == 0, f"Interface should not be flagged, got {findings}"
 
-
-def _mock_rules_for_result():
-    return {
-        "BE-QL-13": {
-            "description": "返回值不是 Result<T>",
-            "level": "P1",
-            "program": {
-                "scanner": "java-return-type",
-                "on_class": "RestController|Controller",
-                "required_return_pattern": "Result<",
-            },
-            "message": "{method} 返回值未使用 Result<T> 包裹",
+    def test_slf4j_present_on_service(self, tmp_path):
+        """BE-QL-08: Service with @Slf4j should pass."""
+        rules = {
+            "BE-QL-08": {
+                "level": "P2",
+                "message": "{class} 缺少 @Slf4j",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "class",
+                    "on_class_annotation": "Service|ServiceImpl",
+                    "skip_interface": True,
+                    "required_class_annotation": "@Slf4j"
+                }
+            }
         }
-    }
-
-
-def _mock_rules_for_autowired():
-    return {
-        "BE-QL-DUMMY": {
-            "description": "@Autowired 字段注入",
-            "level": "P1",
-            "program": {
-                "scanner": "text-grep",
-                "pattern": "@Autowired",
-            },
-            "message": "{class} 使用了 @Autowired 字段注入，应改为构造注入",
-        }
-    }
-
-
-def _mock_rules_for_forbidden_lombok():
-    return {
-        "BE-QL-33": {
-            "description": "禁止的 Lombok 注解",
-            "level": "P1",
-            "program": {
-                "scanner": "text-grep",
-                "pattern": "@SneakyThrows|@Cleanup|@Synchronized",
-            },
-            "message": "{class} 使用了禁止的 Lombok 注解",
-        }
-    }
-
-
-# ── Text Grep Tests ─────────────────────────────────────────────
-
-class TestTextGrepScanner:
-    def test_finds_sysout(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITH_SYSOUT)
-        rules = _mock_rules_for_sysout()
-        findings = TextGrepScanner().scan(f, rules)
-        assert len(findings) == 2  # both System.out and System.err
-
-    def test_no_match_returns_empty(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITH_VALID_CONTROLLER)
-        rules = _mock_rules_for_sysout()
-        findings = TextGrepScanner().scan(f, rules)
+        file_path = tmp_path / "UserServiceImpl.java"
+        file_path.write_text(JAVA_SERVICE_WITH_SLF4J)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
         assert len(findings) == 0
 
-    def test_finding_has_correct_fields(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITH_SYSOUT)
-        rules = _mock_rules_for_sysout()
-        findings = TextGrepScanner().scan(f, rules)
-        finding = findings[0]
-        assert finding.code == "BE-QL-07"
-        assert finding.level == Level.P1
-        assert "System.out" in finding.evidence or "System.err" in finding.evidence
+    def test_slf4j_missing_on_service(self, tmp_path):
+        """BE-QL-08: Service without @Slf4j should be flagged."""
+        rules = {
+            "BE-QL-08": {
+                "level": "P2",
+                "message": "{class} 缺少 @Slf4j",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "class",
+                    "on_class_annotation": "Service|ServiceImpl",
+                    "skip_interface": True,
+                    "required_class_annotation": "@Slf4j"
+                }
+            }
+        }
+        file_path = tmp_path / "UserServiceImpl.java"
+        file_path.write_text(JAVA_SERVICE_WITHOUT_SLF4J)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 1
 
-
-# ── Java Annotation Tests ──────────────────────────────────────
-
-class TestJavaAnnotationScanner:
-    def test_all_valid_no_findings(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITH_VALID_CONTROLLER)
-        rules = _mock_rules_for_validated()
-        findings = JavaAnnotationScanner().scan(f, rules)
+    def test_bcrypt_present_in_service(self, tmp_path):
+        """BE-AU-07: Service with BCryptPasswordEncoder should pass."""
+        rules = {
+            "BE-AU-07": {
+                "level": "P0",
+                "message": "密码未使用 BCrypt",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "class",
+                    "on_class_annotation": "Service|ServiceImpl",
+                    "require_pattern": "BCryptPasswordEncoder"
+                }
+            }
+        }
+        file_path = tmp_path / "UserServiceImpl.java"
+        file_path.write_text(JAVA_WITH_BCRYPT)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
         assert len(findings) == 0
 
-    def test_missing_valid_finds_issues(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITHOUT_VALID)
-        rules = _mock_rules_for_validated()
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 2  # createUser and updateUser
+    def test_bcrypt_missing_in_service(self, tmp_path):
+        """BE-AU-07: Service without BCryptPasswordEncoder should be flagged."""
+        rules = {
+            "BE-AU-07": {
+                "level": "P0",
+                "message": "密码未使用 BCrypt",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "class",
+                    "on_class_annotation": "Service|ServiceImpl",
+                    "require_pattern": "BCryptPasswordEncoder"
+                }
+            }
+        }
+        file_path = tmp_path / "UserServiceImpl.java"
+        file_path.write_text(JAVA_WITHOUT_BCRYPT)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 1
 
-    def test_finding_includes_method_name(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITHOUT_VALID)
-        rules = _mock_rules_for_validated()
-        findings = JavaAnnotationScanner().scan(f, rules)
-        method_names = [fi.method for fi in findings]
-        assert "createUser" in method_names
-        assert "updateUser" in method_names
+    def test_constant_class_final_private_ctor(self, tmp_path):
+        """BE-QL-38: Constant class with final + private ctor should pass."""
+        rules = {
+            "BE-QL-38": {
+                "level": "P2",
+                "message": "常量类应声明为 final + 私有构造",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "class",
+                    "on_class_annotation": ".*(Constant|Constants|Code|Codes)",
+                    "required_class_modifier": "final",
+                    "required_private_constructor": True
+                }
+            }
+        }
+        file_path = tmp_path / "ErrorCodes.java"
+        file_path.write_text(JAVA_CONSTANT_CLASS)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 0
+
+    def test_constant_class_missing_final(self, tmp_path):
+        """BE-QL-38: Constant class without final/private ctor should fail."""
+        rules = {
+            "BE-QL-38": {
+                "level": "P2",
+                "message": "常量类应声明为 final + 私有构造",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "class",
+                    "on_class_annotation": ".*(Constant|Constants|Code|Codes)",
+                    "required_class_modifier": "final",
+                    "required_private_constructor": True
+                }
+            }
+        }
+        file_path = tmp_path / "ErrorCodes.java"
+        file_path.write_text(JAVA_BAD_CONSTANT_CLASS)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) >= 1
 
 
-# ── Return Type Tests ──────────────────────────────────────────
+class TestJavaAstFieldChecks:
 
-class TestJavaReturnTypeScanner:
-    def test_no_result_wrapper(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_NO_RESULT_RETURN)
-        rules = _mock_rules_for_result()
-        findings = JavaReturnTypeScanner().scan(f, rules)
+    def test_schema_on_dto_fields_skips_static_final(self, tmp_path):
+        """BE-IN-04: @Schema check skips static final constants on DTO fields."""
+        rules = {
+            "BE-IN-04": {
+                "level": "P2",
+                "message": "{class}.{field} 缺少 @Schema",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "field",
+                    "on_dir": "dto",
+                    "skip_static_final": True,
+                    "required_field_annotation": "@Schema"
+                }
+            }
+        }
+        dto_dir = tmp_path / "dto"
+        dto_dir.mkdir()
+        file_path = dto_dir / "RegisterDTO.java"
+        file_path.write_text(JAVA_DTO_WITH_SCHEMA)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 0, f"All instance fields have @Schema, static final skipped. Got {findings}"
+
+    def test_schema_missing_on_dto_fields(self, tmp_path):
+        """BE-IN-04: DTO fields without @Schema should be flagged."""
+        rules = {
+            "BE-IN-04": {
+                "level": "P2",
+                "message": "{class}.{field} 缺少 @Schema",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "field",
+                    "on_dir": "dto",
+                    "skip_static_final": True,
+                    "required_field_annotation": "@Schema"
+                }
+            }
+        }
+        dto_dir = tmp_path / "dto"
+        dto_dir.mkdir()
+        file_path = dto_dir / "LoginDTO.java"
+        file_path.write_text(JAVA_DTO_WITHOUT_SCHEMA)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 2  # username and password both missing @Schema
+
+
+class TestJavaAstMethodChecks:
+
+    def test_result_return_type_missing(self, tmp_path):
+        """BE-QL-13: Controller method without Result<T> should be flagged."""
+        rules = {
+            "BE-QL-13": {
+                "level": "P1",
+                "message": "{method} 返回值未使用 Result<T> 包裹",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "method",
+                    "on_class_annotation": "RestController|Controller",
+                    "required_return_pattern": "Result<"
+                }
+            }
+        }
+        file_path = tmp_path / "UserController.java"
+        file_path.write_text(JAVA_NO_RESULT_RETURN)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
         assert len(findings) == 1
         assert findings[0].method == "getUser"
 
-    def test_with_result_wrapper_no_findings(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITH_VALID_CONTROLLER)
-        rules = _mock_rules_for_result()
-        findings = JavaReturnTypeScanner().scan(f, rules)
-        assert all(fi.code != "BE-QL-13" for fi in findings) or len(findings) == 0
+    def test_result_return_type_present(self, tmp_path):
+        """BE-QL-13: Controller method with Result<T> should pass."""
+        rules = {
+            "BE-QL-13": {
+                "level": "P1",
+                "message": "{method} 返回值未使用 Result<T> 包裹",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "method",
+                    "on_class_annotation": "RestController|Controller",
+                    "required_return_pattern": "Result<"
+                }
+            }
+        }
+        file_path = tmp_path / "UserController.java"
+        file_path.write_text(JAVA_WITH_RESULT_RETURN)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 0
+
+    def test_mapper_multi_param_with_param_annotation(self, tmp_path):
+        """BE-QL-44: Mapper method with 2+ params all having @Param should pass."""
+        rules = {
+            "BE-QL-44": {
+                "level": "P1",
+                "message": "{method} 缺少 @Param 注解",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "method",
+                    "on_class_annotation": "*Mapper",
+                    "param_missing_annotation": "@Param",
+                    "param_count_gte": 2
+                }
+            }
+        }
+        file_path = tmp_path / "UserMapper.java"
+        file_path.write_text(JAVA_MAPPER_WITH_PARAM)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) == 0
+
+    def test_mapper_multi_param_missing_param_annotation(self, tmp_path):
+        """BE-QL-44: Mapper method with 2+ params missing @Param should fail."""
+        rules = {
+            "BE-QL-44": {
+                "level": "P1",
+                "message": "{method} 缺少 @Param 注解",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "method",
+                    "on_class_annotation": "*Mapper",
+                    "param_missing_annotation": "@Param",
+                    "param_count_gte": 2
+                }
+            }
+        }
+        file_path = tmp_path / "UserMapper.java"
+        file_path.write_text(JAVA_MAPPER_WITHOUT_PARAM)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) >= 2
+
+
+class TestJavaAstAllChecks:
+
+    def test_system_out_detected(self, tmp_path):
+        """BE-QL-07: System.out.println should be detected."""
+        rules = {
+            "BE-QL-07": {
+                "level": "P1",
+                "message": "使用 System.out/err",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "all",
+                    "forbid_pattern": "System\\.(out|err)\\.print"
+                }
+            }
+        }
+        file_path = tmp_path / "DebugService.java"
+        file_path.write_text(JAVA_WITH_SYSOUT)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) >= 2  # Two println lines
+
+    def test_value_annotation_detected(self, tmp_path):
+        """BE-IN-10: @Value annotation should be detected."""
+        rules = {
+            "BE-IN-10": {
+                "level": "P1",
+                "message": "应使用 @ConfigurationProperties",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "all",
+                    "forbid_pattern": '@Value\\(\\"\\$\\{'
+                }
+            }
+        }
+        file_path = tmp_path / "AppConfig.java"
+        file_path.write_text(JAVA_WITH_VALUE_ANNOTATION)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        assert len(findings) >= 1
+
+
+class TestJavaAstDirectoryFilter:
+
+    def test_on_dir_filter(self, tmp_path):
+        """Directory filter should work for field checks."""
+        rules = {
+            "BE-IN-04": {
+                "level": "P2",
+                "message": "{class}.{field} 缺少 @Schema",
+                "program": {
+                    "scanner": "java-ast",
+                    "target": "field",
+                    "on_dir": "vo",
+                    "skip_static_final": True,
+                    "required_field_annotation": "@Schema"
+                }
+            }
+        }
+        dto_dir = tmp_path / "dto"
+        dto_dir.mkdir()
+        file_path = dto_dir / "LoginDTO.java"
+        file_path.write_text(JAVA_DTO_WITHOUT_SCHEMA)
+        scanner = JavaAstScanner()
+        findings = scanner.scan(file_path, rules)
+        # on_dir is "vo", but the file is in "dto" dir -- should NOT trigger
+        assert len(findings) == 0
+
+
+# ═══════════════════════════════════════════════════════════════
+# Retained Scanner Tests
+# ═══════════════════════════════════════════════════════════════
+
+class TestScannerRegistry:
+
+    def test_scanner_registry(self):
+        """Verify SCANNERS contains the right scanners."""
+        assert "java-ast" in SCANNERS
+        assert "package-structure" in SCANNERS
+        assert "file-naming" in SCANNERS
+        assert "config-check" in SCANNERS
+
+    def test_old_scanners_removed(self):
+        """Verify old scanners are gone."""
+        assert "text-grep" not in SCANNERS
+        assert "java-annotation" not in SCANNERS
+        assert "java-return-type" not in SCANNERS
 
 
 # ── File Classification Tests ──────────────────────────────────
@@ -352,579 +824,7 @@ class TestIsBlocked:
         assert is_blocked([], BlockingStrategy.STRICT) is False
 
 
-# ── Integration Test ───────────────────────────────────────────
-
-class TestScanSingleFile:
-    def test_scan_with_multiple_rule_types(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITHOUT_VALID)
-        rules = {
-            **_mock_rules_for_sysout(),
-            **_mock_rules_for_validated(),
-        }
-        findings = scan_single_file(f, rules)
-        assert len(findings) == 2
-        assert all(fi.code == "BE-QL-29" for fi in findings)
-
-    def test_scan_autowired(self, tmp_path):
-        f = _temp_java_file(tmp_path, JAVA_WITH_AUTOWIRED)
-        rules = _mock_rules_for_autowired()
-        findings = scan_single_file(f, rules)
-        assert len(findings) == 1
-        assert findings[0].evidence.strip() == "@Autowired"
-
-
-# ── P0-3: on_class class name matching ─────────────────────────
-
-JAVA_ENTITY_WITHOUT_TABLELOGIC = """
-package com.example.entity;
-
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.annotation.TableId;
-
-@TableName("users")
-public class UserEntity {
-    @TableId
-    private Long id;
-    private String name;
-    private Integer deleted;
-}
-"""
-
-JAVA_MAPPER_WITH_MULTI_PARAM = """
-package com.example.mapper;
-
-import org.apache.ibatis.annotations.Mapper;
-
-@Mapper
-public interface UserMapper {
-    UserEntity selectByCondition(String name, Integer status);
-}
-"""
-
-
-class TestOnClassClassNameMatching:
-    """P0-3: on_class should match class names, not just annotations."""
-
-    def test_on_class_matches_entity_class_name(self, tmp_path):
-        """BE-QL-27: on_class '*Entity' should match class UserEntity."""
-        f = _temp_java_file(tmp_path, JAVA_ENTITY_WITHOUT_TABLELOGIC)
-        rules = {
-            "BE-QL-27": {
-                "description": "Entity 缺少 @TableLogic",
-                "level": "P1",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "*Entity",
-                    "required_field_annotation": "@TableLogic",
-                },
-                "message": "{class} 缺少 @TableLogic 注解",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 1
-        assert findings[0].code == "BE-QL-27"
-
-    def test_on_class_matches_mapper_class_name(self, tmp_path):
-        """BE-QL-44: on_class '*Mapper' should match interface UserMapper."""
-        f = _temp_java_file(tmp_path, JAVA_MAPPER_WITH_MULTI_PARAM)
-        rules = {
-            "BE-QL-44": {
-                "description": "Mapper 多参数缺 @Param",
-                "level": "P1",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "*Mapper",
-                    "target": "method_param",
-                    "param_count_gte": 2,
-                    "missing_annotation": "@Param",
-                },
-                "message": "{method} 缺少 @Param 注解",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 2  # both params missing @Param
-
-    def test_on_class_still_matches_annotations(self, tmp_path):
-        """on_class 'RestController|Controller' should still match annotations."""
-        f = _temp_java_file(tmp_path, JAVA_WITHOUT_VALID)
-        rules = _mock_rules_for_validated()
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 2  # existing behavior preserved
-
-
-# ── P1-1 + P1-5: Field-level annotation support ────────────────
-
-JAVA_DTO_WITHOUT_SCHEMA = """
-package com.example.dto;
-
-public class CreateUserDTO {
-    private String username;
-    private String email;
-    private Integer age;
-}
-"""
-
-JAVA_DTO_WITH_SCHEMA = """
-package com.example.dto;
-
-import io.swagger.v3.oas.annotations.media.Schema;
-
-public class CreateUserDTO {
-    @Schema(description = "用户名")
-    private String username;
-
-    private String email;
-}
-"""
-
-
-class TestFieldLevelAnnotations:
-    """P1-1: target: field support for field-level annotation checks."""
-
-    def test_target_field_reports_missing_schema(self, tmp_path):
-        """BE-IN-04: DTO fields missing @Schema."""
-        dto_dir = tmp_path / "dto"
-        dto_dir.mkdir()
-        f = _temp_java_file(dto_dir, JAVA_DTO_WITHOUT_SCHEMA, "CreateUserDTO.java")
-        rules = {
-            "BE-IN-04": {
-                "description": "DTO 字段缺少 @Schema",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_dir": "dto",
-                    "target": "field",
-                    "missing_annotation": "@Schema",
-                },
-                "message": "{class}.{field} 缺少 @Schema",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 3  # username, email, age
-
-    def test_target_field_no_findings_when_annotated(self, tmp_path):
-        """DTO fields with @Schema should produce no findings for annotated fields."""
-        dto_dir = tmp_path / "dto"
-        dto_dir.mkdir()
-        f = _temp_java_file(dto_dir, JAVA_DTO_WITH_SCHEMA, "CreateUserDTO.java")
-        rules = {
-            "BE-IN-04": {
-                "description": "DTO 字段缺少 @Schema",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_dir": "dto",
-                    "target": "field",
-                    "missing_annotation": "@Schema",
-                },
-                "message": "{class}.{field} 缺少 @Schema",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        # username has @Schema, email doesn't → 1 finding
-        assert len(findings) == 1
-
-    def test_required_field_annotation_entity(self, tmp_path):
-        """P1-5: required_field_annotation on Entity classes."""
-        f = _temp_java_file(tmp_path, JAVA_ENTITY_WITHOUT_TABLELOGIC)
-        rules = {
-            "BE-QL-27": {
-                "description": "Entity 缺少 @TableLogic",
-                "level": "P1",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "*Entity",
-                    "required_field_annotation": "@TableLogic",
-                },
-                "message": "{class} 缺少 @TableLogic 注解",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 1
-        assert "缺少 @TableLogic" in findings[0].evidence
-
-
-# ── P1-2: on_dir filtering ─────────────────────────────────────
-
-
-class TestOnDirFiltering:
-    """P1-2: on_dir should filter files by directory."""
-
-    def test_on_dir_matches_correct_directory(self, tmp_path):
-        """File in 'dto' directory should match on_dir: 'dto'."""
-        dto_dir = tmp_path / "dto"
-        dto_dir.mkdir()
-        f = _temp_java_file(dto_dir, JAVA_DTO_WITHOUT_SCHEMA, "CreateUserDTO.java")
-        rules = {
-            "BE-IN-04": {
-                "description": "DTO 字段缺少 @Schema",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_dir": "dto",
-                    "target": "field",
-                    "missing_annotation": "@Schema",
-                },
-                "message": "{class}.{field} 缺少 @Schema",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 3
-
-    def test_on_dir_skips_non_matching_directory(self, tmp_path):
-        """File NOT in 'dto' directory should be skipped."""
-        svc_dir = tmp_path / "service"
-        svc_dir.mkdir()
-        f = _temp_java_file(svc_dir, JAVA_DTO_WITHOUT_SCHEMA, "SomeService.java")
-        rules = {
-            "BE-IN-04": {
-                "description": "DTO 字段缺少 @Schema",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_dir": "dto",
-                    "target": "field",
-                    "missing_annotation": "@Schema",
-                },
-                "message": "{class}.{field} 缺少 @Schema",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 0
-
-    def test_on_dir_with_text_grep(self, tmp_path):
-        """on_dir should work with text-grep scanner."""
-        svc_dir = tmp_path / "service"
-        svc_dir.mkdir()
-        f = _temp_java_file(svc_dir, JAVA_WITH_AUTOWIRED)
-        rules = {
-            "BE-AU-15": {
-                "description": "权限注解在 Service 层",
-                "level": "P1",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_dir": "service",
-                    "pattern": "@Autowired",
-                },
-                "message": "Service 层不应有 @Autowired",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        assert len(findings) == 1
-
-    def test_on_dir_pipe_separated(self, tmp_path):
-        """on_dir 'config|security' should match either directory."""
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-        f = _temp_java_file(config_dir, JAVA_WITH_AUTOWIRED)
-        rules = {
-            "BE-AU-07": {
-                "description": "检查 BCrypt",
-                "level": "P0",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_dir": "config|security",
-                    "pattern": "BCryptPasswordEncoder",
-                    "must_match": True,
-                },
-                "message": "密码未使用 BCryptPasswordEncoder",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        # must_match=True, pattern not found → 1 finding
-        assert len(findings) == 1
-
-
-# ── P1-3: Method-level annotation checks ───────────────────────
-
-JAVA_CONTROLLER_WITHOUT_OPERATION = """
-package com.example.controller;
-
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @GetMapping("/{id}")
-    public Result getUser(@PathVariable Long id) {
-        return Result.success();
-    }
-
-    @PostMapping
-    public Result createUser(@RequestBody CreateUserDTO dto) {
-        return Result.success();
-    }
-}
-"""
-
-JAVA_CONTROLLER_WITH_GETMAPPING = """
-package com.example.controller;
-
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @GetMapping("/{id}")
-    public Result getUser(@PathVariable Long id) {
-        return Result.success();
-    }
-
-    @GetMapping("/search")
-    public Result search(@RequestParam String keyword) {
-        return Result.success();
-    }
-}
-"""
-
-
-class TestMethodLevelAnnotations:
-    """P1-3: on_public_method and on_method_annotation support."""
-
-    def test_on_public_method_reports_missing_operation(self, tmp_path):
-        """BE-IN-02: public methods missing @Operation."""
-        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_WITHOUT_OPERATION)
-        rules = {
-            "BE-IN-02": {
-                "description": "Controller 方法缺少 @Operation",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "RestController|Controller",
-                    "on_public_method": True,
-                    "missing_annotation": "@Operation",
-                },
-                "message": "{method} 缺少 @Operation 注解",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 2  # getUser and createUser
-
-    def test_on_method_annotation_filters_methods(self, tmp_path):
-        """BE-IN-03: only check @GetMapping methods for @Parameter on params."""
-        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_WITH_GETMAPPING)
-        rules = {
-            "BE-IN-03": {
-                "description": "@PathVariable/@RequestParam 缺少 @Parameter",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_method_annotation": "GetMapping",
-                    "target": "method_param",
-                    "match_annotation": "PathVariable|RequestParam",
-                    "missing_annotation": "@Parameter",
-                },
-                "message": "{method} 的 {param} 缺少 @Parameter 注解",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 2  # id (PathVariable) + keyword (RequestParam)
-
-    def test_param_count_gte_filters_methods(self, tmp_path):
-        """BE-QL-44: only check methods with >= 2 params."""
-        f = _temp_java_file(tmp_path, JAVA_MAPPER_WITH_MULTI_PARAM)
-        rules = {
-            "BE-QL-44": {
-                "description": "Mapper 多参数缺 @Param",
-                "level": "P1",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "*Mapper",
-                    "target": "method_param",
-                    "param_count_gte": 2,
-                    "missing_annotation": "@Param",
-                },
-                "message": "{method} 缺少 @Param 注解",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 2  # name and status params
-
-
-# ── P1-4: on_method_name filtering ─────────────────────────────
-
-JAVA_CONTROLLER_WITH_PAGE = """
-package com.example.controller;
-
-import org.springframework.web.bind.annotation.*;
-import com.example.common.Result;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @GetMapping("/page")
-    public Result<PageResult<UserVO>> pageUsers(@RequestParam int page, @RequestParam int size) {
-        return Result.success();
-    }
-
-    @GetMapping("/list")
-    public List listUsers() {
-        return List.of();
-    }
-
-    @GetMapping("/{id}")
-    public Result<UserVO> getById(@PathVariable Long id) {
-        return Result.success();
-    }
-}
-"""
-
-
-class TestOnMethodNameFiltering:
-    """P1-4: on_method_name filtering in JavaReturnTypeScanner."""
-
-    def test_on_method_name_filters_page_list_methods(self, tmp_path):
-        """BE-QL-16: only check page|list methods for PageResult<."""
-        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_WITH_PAGE)
-        rules = {
-            "BE-QL-16": {
-                "description": "分页查询应返回 Result<PageResult<T>>",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-return-type",
-                    "on_class": "RestController|Controller",
-                    "on_method_name": "page|list",
-                    "required_return_pattern": "PageResult<",
-                },
-                "message": "{method} 分页查询应返回 Result<PageResult<T>>",
-            }
-        }
-        findings = JavaReturnTypeScanner().scan(f, rules)
-        # pageUsers returns PageResult (no issue), listUsers returns List (issue)
-        # getById returns Result (but method name doesn't match filter, skipped)
-        assert len(findings) == 1
-        assert findings[0].method == "listUsers"
-
-    def test_on_method_name_no_match_skips_all(self, tmp_path):
-        """Methods not matching on_method_name should be skipped."""
-        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_WITH_PAGE)
-        rules = {
-            "BE-QL-16": {
-                "description": "分页查询应返回 Result<PageResult<T>>",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-return-type",
-                    "on_class": "RestController|Controller",
-                    "on_method_name": "export|download",
-                    "required_return_pattern": "Result<",
-                },
-                "message": "{method} 应返回 Result",
-            }
-        }
-        findings = JavaReturnTypeScanner().scan(f, rules)
-        assert len(findings) == 0
-
-
-# ── P1-6: on_file_pattern + must_match ─────────────────────────
-
-
-class TestOnFilePatternAndMustMatch:
-    """P1-6: on_file_pattern filtering and must_match semantics."""
-
-    def test_must_match_reports_when_pattern_absent(self, tmp_path):
-        """must_match=True: report finding when pattern NOT found."""
-        f = _temp_java_file(tmp_path, JAVA_WITH_SYSOUT)
-        rules = {
-            "BE-QL-17": {
-                "description": "分页 DTO 应继承 PageQueryDTO",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "pattern": "extends\\s+PageQueryDTO",
-                    "must_match": True,
-                },
-                "message": "分页 DTO 应继承 PageQueryDTO",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        assert len(findings) == 1
-        assert "未找到匹配" in findings[0].evidence
-
-    def test_must_match_no_finding_when_pattern_found(self, tmp_path):
-        """must_match=True: no finding when pattern IS present."""
-        content = """
-        package com.example.dto;
-        public class UserPageDTO extends PageQueryDTO {
-            private String name;
-        }
-        """
-        f = _temp_java_file(tmp_path, content)
-        rules = {
-            "BE-QL-17": {
-                "description": "分页 DTO 应继承 PageQueryDTO",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "pattern": "extends\\s+PageQueryDTO",
-                    "must_match": True,
-                },
-                "message": "分页 DTO 应继承 PageQueryDTO",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        assert len(findings) == 0
-
-    def test_on_file_pattern_filters_by_filename(self, tmp_path):
-        """on_file_pattern restricts to files matching the regex."""
-        dto_dir = tmp_path / "dto"
-        dto_dir.mkdir()
-        f = _temp_java_file(
-            dto_dir, JAVA_ENTITY_WITHOUT_TABLELOGIC, "UserPageDTO.java"
-        )
-        rules = {
-            "BE-QL-17": {
-                "description": "分页 DTO 应继承 PageQueryDTO",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_dir": "dto",
-                    "pattern": "extends\\s+PageQueryDTO",
-                    "on_file_pattern": ".*(Page|Query|Search).*DTO\\.java",
-                    "must_match": True,
-                },
-                "message": "分页 DTO 应继承 PageQueryDTO",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        # UserPageDTO.java matches the file pattern, and must_match finds no
-        # PageQueryDTO → reports finding
-        assert len(findings) == 1
-
-    def test_on_file_pattern_skips_non_matching_files(self, tmp_path):
-        """Files not matching on_file_pattern should be skipped."""
-        dto_dir = tmp_path / "dto"
-        dto_dir.mkdir()
-        f = _temp_java_file(dto_dir, JAVA_DTO_WITHOUT_SCHEMA, "CreateUserDTO.java")
-        rules = {
-            "BE-QL-17": {
-                "description": "分页 DTO 应继承 PageQueryDTO",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_dir": "dto",
-                    "pattern": "extends\\s+PageQueryDTO",
-                    "on_file_pattern": ".*(Page|Query|Search).*DTO\\.java",
-                    "must_match": True,
-                },
-                "message": "分页 DTO 应继承 PageQueryDTO",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        # CreateUserDTO.java doesn't match file pattern → skipped
-        assert len(findings) == 0
-
-
-# ── P0-1: New scanner types ────────────────────────────────────
-
-from code_check.scanner import (
-    PackageStructureScanner,
-    FileNamingScanner,
-    ConfigCheckScanner,
-)
-
+# ── Package Structure Scanner Tests ────────────────────────────
 
 class TestPackageStructureScanner:
     """P0-1: PackageStructureScanner for directory structure checks."""
@@ -1022,6 +922,28 @@ class TestPackageStructureScanner:
         }
         findings = PackageStructureScanner().scan(f, rules)
         assert len(findings) == 0
+
+
+# ── File Naming Scanner Tests ──────────────────────────────────
+
+JAVA_WITH_VALID_CONTROLLER = """
+package com.example.controller;
+
+import org.springframework.web.bind.annotation.*;
+import com.example.common.Result;
+import jakarta.validation.Valid;
+import com.example.dto.CreateUserDTO;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @PostMapping
+    public Result<Void> createUser(@Valid CreateUserDTO dto) {
+        return Result.success();
+    }
+}
+"""
 
 
 class TestFileNamingScanner:
@@ -1133,6 +1055,8 @@ class TestFileNamingScanner:
         assert len(findings) == 0  # Excluded
 
 
+# ── Config Check Scanner Tests ─────────────────────────────────
+
 class TestConfigCheckScanner:
     """P0-1: ConfigCheckScanner for config file checks."""
 
@@ -1193,7 +1117,7 @@ spring:
         }
         findings = ConfigCheckScanner().scan_directory(tmp_path, rules)
         # ${DB_PASSWORD} matches (?!\$\{) negative lookahead? No, it starts with ${
-        # So the regex won't match → no finding
+        # So the regex won't match -- no finding
         assert len(findings) == 0
 
     def test_scan_method_returns_empty(self, tmp_path):
@@ -1216,274 +1140,37 @@ spring:
         assert len(findings) == 0
 
 
-# ── P0-1: re.error crash fix ───────────────────────────────────
-
-from code_check.scanner import _on_class_matches, _any_match, _class_name_matches
+# ── _any_match crash fix Tests ────────────────────────────────
 
 
-class TestReErrorCrashFix:
-    """P0-1: _any_match/_class_name_matches must not crash on invalid regex."""
+class TestAnyMatchCrashFix:
+    """_any_match must not crash on invalid regex."""
 
-    def test_on_class_with_unbalanced_parens_does_not_crash(self):
-        """BE-QL-38 on_class with .*(Constant|Constants|Code|Codes) must not crash."""
+    def test_any_match_with_unbalanced_parens_does_not_crash(self):
+        """Pattern .*(Constant|Constants|Code|Codes) split on | must not crash."""
         # The pattern .*(Constant|Constants|Code|Codes) split by | produces
         # "Codes)" which is an invalid regex (unbalanced paren).
-        # This must not raise re.error.
-        result = _on_class_matches(
-            ["Component"], "UserService",
-            ".*(Constant|Constants|Code|Codes)"
+        # _any_match must not raise re.error.
+        result = _any_match(
+            ["Component"], ".*(Constant|Constants|Code|Codes)"
         )
-        # Should not crash and should return False (UserService doesn't match)
+        # Should not crash and should return False (Component doesn't match)
         assert result is False
 
-    def test_on_class_with_valid_pattern_still_works(self):
+    def test_any_match_with_valid_pattern_still_works(self):
         """Normal patterns should still match correctly after the fix."""
-        # "RestController|Controller" should match @RestController annotation
-        result = _on_class_matches(
-            ["RestController"], "UserController",
-            "RestController|Controller"
+        result = _any_match(
+            ["RestController"], "RestController|Controller"
         )
         assert result is True
 
-    def test_class_name_matches_with_invalid_regex_does_not_crash(self):
-        """_class_name_matches must handle "Codes)" gracefully."""
-        result = _class_name_matches("UserService", ".*(Constant|Constants|Code|Codes)")
-        assert result is False
-
-    def test_class_name_matches_with_valid_pattern(self):
-        """_class_name_matches should still match valid patterns."""
-        result = _class_name_matches("UserMapper", "*Mapper")
+    def test_any_match_with_glob_pattern(self):
+        """Glob patterns like *Mapper should match."""
+        result = _any_match(["UserMapper"], "*Mapper")
         assert result is True
 
 
-# ── P0-2: _find_methods line number accuracy ────────────────────
-
-JAVA_WITH_COMMENTS = """
-package com.example;
-
-/**
- * Javadoc comment block
- * that spans multiple lines
- */
-public class TestService {
-
-    // Single line comment
-    public void doSomething() {
-        System.out.println("hello");
-    }
-
-    /*
-     * Multi-line block comment
-     */
-    public String getValue() {
-        return "value";
-    }
-}
-"""
-
-
-class TestFindMethodsLineNumbers:
-    """P0-2: _find_methods should return accurate line numbers."""
-
-    def test_method_line_numbers_are_accurate(self):
-        """Line numbers should be close to actual source positions."""
-        from code_check.scanner import _find_methods
-        methods = _find_methods(JAVA_WITH_COMMENTS)
-        assert len(methods) == 2
-        do_something = [m for m in methods if m["name"] == "doSomething"][0]
-        get_value = [m for m in methods if m["name"] == "getValue"][0]
-        # getValue must come after doSomething
-        assert get_value["line_num"] > do_something["line_num"]
-        # Line numbers should be reasonable (not wildly off)
-        assert do_something["line_num"] >= 7
-        assert get_value["line_num"] > 10
-
-    def test_return_type_does_not_include_modifier(self):
-        """P0-3: return_type should be just the type, not 'public Type'."""
-        from code_check.scanner import _find_methods
-        methods = _find_methods(JAVA_WITH_COMMENTS)
-        for m in methods:
-            # return_type should NOT start with "public", "private", "protected"
-            assert not m["return_type"].startswith("public")
-            assert not m["return_type"].startswith("private")
-            assert m["return_type"] in ("void", "String")
-
-
-# ── P0-4: check_group_present ───────────────────────────────────
-
-JAVA_WITH_VALIDATED_NO_GROUP = """
-package com.example.controller;
-
-import org.springframework.validation.annotation.Validated;
-import jakarta.validation.Valid;
-
-@RestController
-public class UserController {
-
-    @PostMapping
-    public Result createUser(@Validated CreateUserDTO dto) {
-        return Result.success();
-    }
-}
-"""
-
-JAVA_WITH_VALIDATED_WITH_GROUP = """
-package com.example.controller;
-
-import org.springframework.validation.annotation.Validated;
-import jakarta.validation.Valid;
-
-@RestController
-public class UserController {
-
-    @PostMapping
-    public Result createUser(@Validated(Create.class) CreateUserDTO dto) {
-        return Result.success();
-    }
-}
-"""
-
-
-class TestCheckGroupPresent:
-    """P0-4: BE-QL-30 check_group_present must detect @Validated without group."""
-
-    def test_validated_without_group_reports_finding(self, tmp_path):
-        """@Validated without group parameter should produce a finding."""
-        f = _temp_java_file(tmp_path, JAVA_WITH_VALIDATED_NO_GROUP)
-        rules = {
-            "BE-QL-30": {
-                "description": "@Validated 未指定分组",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "RestController|Controller",
-                    "target": "method_param",
-                    "match_param_type": "DTO|Request|Command",
-                    "check_group_present": True,
-                },
-                "message": "{method} 的 @Validated 未指定分组",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 1
-        assert "未指定分组" in findings[0].evidence
-        assert findings[0].method == "createUser"
-
-    def test_validated_with_group_no_finding(self, tmp_path):
-        """@Validated(Create.class) should NOT produce a finding."""
-        f = _temp_java_file(tmp_path, JAVA_WITH_VALIDATED_WITH_GROUP)
-        rules = {
-            "BE-QL-30": {
-                "description": "@Validated 未指定分组",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "RestController|Controller",
-                    "target": "method_param",
-                    "match_param_type": "DTO|Request|Command",
-                    "check_group_present": True,
-                },
-                "message": "{method} 的 @Validated 未指定分组",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 0
-
-
-# ── P0-5: required_class_modifier + required_private_constructor ─
-
-JAVA_CONSTANTS_WITHOUT_FINAL = """
-package com.example.constant;
-
-public class UserConstants {
-    public static final String DEFAULT_NAME = "unknown";
-    private UserConstants() {}
-}
-"""
-
-JAVA_CONSTANTS_WITHOUT_PRIVATE_CTOR = """
-package com.example.constant;
-
-public final class UserConstants {
-    public static final String DEFAULT_NAME = "unknown";
-    public UserConstants() {}
-}
-"""
-
-JAVA_CONSTANTS_CORRECT = """
-package com.example.constant;
-
-public final class UserConstants {
-    public static final String DEFAULT_NAME = "unknown";
-    private UserConstants() {}
-}
-"""
-
-
-class TestRequiredClassModifier:
-    """P0-5: BE-QL-38 required_class_modifier and required_private_constructor."""
-
-    def test_missing_final_modifier_reported(self, tmp_path):
-        """Class without final modifier should be reported."""
-        f = _temp_java_file(tmp_path, JAVA_CONSTANTS_WITHOUT_FINAL)
-        rules = {
-            "BE-QL-38": {
-                "description": "常量类应 final + 私有构造",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "*Constants",
-                    "required_class_modifier": "final",
-                },
-                "message": "常量类应声明为 final + 私有构造",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 1
-        assert "final" in findings[0].evidence
-
-    def test_missing_private_constructor_reported(self, tmp_path):
-        """Class without private constructor should be reported."""
-        f = _temp_java_file(tmp_path, JAVA_CONSTANTS_WITHOUT_PRIVATE_CTOR)
-        rules = {
-            "BE-QL-38": {
-                "description": "常量类应 final + 私有构造",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "*Constants",
-                    "required_private_constructor": True,
-                },
-                "message": "常量类应声明为 final + 私有构造",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 1
-        assert "私有构造" in findings[0].evidence
-
-    def test_correct_constants_class_no_findings(self, tmp_path):
-        """Correct final class with private constructor → no findings."""
-        f = _temp_java_file(tmp_path, JAVA_CONSTANTS_CORRECT)
-        rules = {
-            "BE-QL-38": {
-                "description": "常量类应 final + 私有构造",
-                "level": "P2",
-                "program": {
-                    "scanner": "java-annotation",
-                    "on_class": "*Constants",
-                    "required_class_modifier": "final",
-                    "required_private_constructor": True,
-                },
-                "message": "常量类应声明为 final + 私有构造",
-            }
-        }
-        findings = JavaAnnotationScanner().scan(f, rules)
-        assert len(findings) == 0
-
-
-# ── P0-6: nested YAML matching ──────────────────────────────────
-
-from code_check.scanner import _find_nested_yaml
+# ── Nested YAML Matching Tests ─────────────────────────────────
 
 
 class TestNestedYamlMatching:
@@ -1554,9 +1241,7 @@ knife4j:
         assert len(findings) >= 1
 
 
-# ── P1-2: _matches_on_dir exact match ───────────────────────────
-
-from code_check.scanner import _matches_on_dir
+# ── _matches_on_dir Tests ──────────────────────────────────────
 
 
 class TestMatchesOnDirExact:
@@ -1582,8 +1267,7 @@ class TestMatchesOnDirExact:
         assert _matches_on_dir(Path("/src/service/UserService.java"), "*impl*") is False
 
 
-# ── P1-3: ConfigCheckScanner exclude ────────────────────────────
-
+# ── ConfigCheck Exclude Tests ──────────────────────────────────
 
 class TestConfigCheckExclude:
     """P1-3: ConfigCheckScanner should respect exclude patterns."""
@@ -1639,237 +1323,3 @@ class TestConfigCheckExclude:
         assert len(findings) >= 1
 
 
-# ── P1-1: _get_fields line number accuracy ──────────────────────
-
-JAVA_DTO_WITH_COMMENTED_FIELDS = """
-package com.example.dto;
-
-/**
- * DTO for creating users.
- */
-public class CreateUserDTO {
-    // Username field
-    private String username;
-
-    /**
-     * Email address
-     */
-    private String email;
-
-    private Integer age;
-}
-"""
-
-
-class TestGetFieldsLineNumbers:
-    """P1-1: _get_fields should return accurate line numbers."""
-
-    def test_field_line_numbers_are_accurate(self):
-        """Field line numbers should be in correct relative order."""
-        from code_check.scanner import _get_fields
-        fields = _get_fields(JAVA_DTO_WITH_COMMENTED_FIELDS)
-        assert len(fields) == 3
-        names_and_lines = {f["name"]: f["line_num"] for f in fields}
-        # Fields should be in correct order
-        assert names_and_lines["username"] < names_and_lines["email"]
-        assert names_and_lines["email"] < names_and_lines["age"]
-        # Line numbers should be positive and reasonable
-        for name, lineno in names_and_lines.items():
-            assert lineno > 0, f"{name} line {lineno} should be > 0"
-
-
-# ── BE-QL-15: TextGrepScanner on_class + on_method_annotation ───
-
-JAVA_CONTROLLER_WRITE_METHODS = """
-package com.example.controller;
-
-import org.springframework.web.bind.annotation.*;
-import com.example.common.Result;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @PostMapping
-    public Result<Void> createUser(@RequestBody CreateUserDTO dto) {
-        return Result.success();
-    }
-
-    @PutMapping("/{id}")
-    public Result<Void> updateUser(@PathVariable Long id, @RequestBody UpdateUserDTO dto) {
-        return Result.success();
-    }
-
-    @DeleteMapping("/{id}")
-    public Result<Void> deleteUser(@PathVariable Long id) {
-        return Result.success(id);
-    }
-
-    @GetMapping("/{id}")
-    public Result<UserVO> getUser(@PathVariable Long id) {
-        return Result.success(new UserVO());
-    }
-}
-"""
-
-JAVA_CONTROLLER_MISSING_RESULT_SUCCESS = """
-package com.example.controller;
-
-import org.springframework.web.bind.annotation.*;
-import com.example.common.Result;
-
-@RestController
-@RequestMapping("/users")
-public class UserController {
-
-    @PostMapping
-    public Result<Void> createUser(@RequestBody CreateUserDTO dto) {
-        return Result.success(dto);
-    }
-
-    @PutMapping("/{id}")
-    public Result<Void> updateUser(@PathVariable Long id, @RequestBody UpdateUserDTO dto) {
-        return Result.success("ok");
-    }
-}
-"""
-
-
-class TestTextGrepOnClassAndMethodAnnotation:
-    """BE-QL-15: TextGrepScanner with on_class + on_method_annotation + must_match."""
-
-    def test_on_class_filters_by_annotation(self, tmp_path):
-        """on_class should restrict to files with matching class annotations."""
-        f = _temp_java_file(tmp_path, JAVA_WITH_AUTOWIRED)
-        rules = {
-            "BE-QL-15": {
-                "description": "写操作应返回 Result.success()",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_class": "RestController|Controller",
-                    "pattern": "@Autowired",
-                },
-                "message": "test",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        # Service class doesn't have @RestController → skipped
-        assert len(findings) == 0
-
-    def test_on_method_annotation_must_match_finds_correct_methods(self, tmp_path):
-        """must_match with on_method_annotation checks each annotated method."""
-        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_WRITE_METHODS)
-        rules = {
-            "BE-QL-15": {
-                "description": "写操作应返回 Result.success() 无 data",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_class": "RestController|Controller",
-                    "on_method_annotation": "PostMapping|PutMapping|DeleteMapping",
-                    "pattern": r"return\s+Result\.success\(\s*\)",
-                    "must_match": True,
-                },
-                "message": "{method} 应使用 Result.success() 无 data 返回",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        # deleteUser returns Result.success(id) — not empty → finding
-        assert len(findings) == 1
-        assert findings[0].method == "deleteUser"
-
-    def test_on_method_annotation_must_match_all_pass(self, tmp_path):
-        """When all annotated methods have the pattern, no findings."""
-        content = """package com.example.controller;
-@RestController
-public class UserController {
-    @PostMapping
-    public Result create() {
-        return Result.success();
-    }
-    @DeleteMapping
-    public Result delete() {
-        return Result.success();
-    }
-}
-"""
-        f = _temp_java_file(tmp_path, content)
-        rules = {
-            "BE-QL-15": {
-                "description": "写操作应返回 Result.success() 无 data",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_class": "RestController|Controller",
-                    "on_method_annotation": "PostMapping|DeleteMapping",
-                    "pattern": r"return\s+Result\.success\(\s*\)",
-                    "must_match": True,
-                },
-                "message": "{method} 应使用 Result.success() 无 data 返回",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        assert len(findings) == 0
-
-    def test_missing_both_patterns_reports_all(self, tmp_path):
-        """All annotated methods missing pattern → all reported."""
-        f = _temp_java_file(tmp_path, JAVA_CONTROLLER_MISSING_RESULT_SUCCESS)
-        rules = {
-            "BE-QL-15": {
-                "description": "写操作应返回 Result.success() 无 data",
-                "level": "P2",
-                "program": {
-                    "scanner": "text-grep",
-                    "on_class": "RestController|Controller",
-                    "on_method_annotation": "PostMapping|PutMapping",
-                    "pattern": r"return\s+Result\.success\(\s*\)",
-                    "must_match": True,
-                },
-                "message": "{method} 应使用 Result.success() 无 data 返回",
-            }
-        }
-        findings = TextGrepScanner().scan(f, rules)
-        assert len(findings) == 2
-        method_names = {f.method for f in findings}
-        assert "createUser" in method_names
-        assert "updateUser" in method_names
-
-
-# ── P2-8: Generic type params parsing ───────────────────────────
-
-from code_check.scanner import _parse_params
-
-
-class TestParseParamsGenerics:
-    """P2-8: _parse_params should handle generic type parameters."""
-
-    def test_simple_params(self):
-        """Simple parameters without generics."""
-        params = _parse_params("String name, Integer age")
-        assert len(params) == 2
-        assert params[0]["type"] == "String"
-        assert params[0]["name"] == "name"
-
-    def test_generic_param(self):
-        """Single generic parameter."""
-        params = _parse_params("List<CreateUserDTO> dtos")
-        assert len(params) == 1
-        assert params[0]["type"] == "List<CreateUserDTO>"
-        assert params[0]["name"] == "dtos"
-
-    def test_nested_generic_param(self):
-        """Nested generic parameters with commas inside angle brackets."""
-        params = _parse_params("Map<String, Integer> map, String name")
-        assert len(params) == 2
-        assert params[0]["type"] == "Map<String, Integer>"
-        assert params[0]["name"] == "map"
-        assert params[1]["name"] == "name"
-
-    def test_annotated_generic_param(self):
-        """Generic param with annotations."""
-        params = _parse_params("@Valid List<CreateUserDTO> dtos")
-        assert len(params) == 1
-        assert params[0]["type"] == "List<CreateUserDTO>"
-        assert params[0]["name"] == "dtos"
-        assert "Valid" in params[0]["annotations"]

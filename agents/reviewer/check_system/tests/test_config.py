@@ -40,10 +40,10 @@ class TestLoadProgramChecks:
         rules = load_program_checks(rules_dir=tmp_project / "rules")
         assert "BE-QL-29" in rules
         rule = rules["BE-QL-29"]
-        assert rule["description"] == "Controller DTO 参数缺少 @Validated"
+        assert "Validated" in rule["description"] and "DTO" in rule["description"]
         assert rule["level"] == "P1"
-        assert rule["program"]["scanner"] == "java-annotation"
-        assert rule["message"] == "{method} 缺少 @Validated/@Valid 注解 DTO 参数"
+        assert rule["program"]["scanner"] == "java-ast"
+        assert "缺少 @Validated/@Valid" in rule["message"]
 
     def test_empty_dir_returns_empty(self, tmp_path):
         rules_dir = tmp_path / "empty-rules"

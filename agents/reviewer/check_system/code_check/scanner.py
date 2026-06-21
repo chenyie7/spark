@@ -170,11 +170,11 @@ def _annotation_names(node) -> list[str]:
         if child.type == "marker_annotation":
             name_node = _child_by_type(child, "identifier")
             if name_node:
-                names.append(child.text.decode("utf-8", errors="replace"))
+                names.append(name_node.text.decode("utf-8", errors="replace"))
         elif child.type == "annotation":
             name_node = _child_by_type(child, "identifier")
             if name_node:
-                names.append(child.text.decode("utf-8", errors="replace"))
+                names.append(name_node.text.decode("utf-8", errors="replace"))
     return names
 
 
@@ -190,13 +190,22 @@ def _find_class_node(tree: tree_sitter.Tree) -> tuple:
     return None, ""
 
 
+def _get_class_interface_body(node):
+    """Get the body node for a class/interface/enum, handling interface_body and enum_body."""
+    for body_type in ("class_body", "interface_body", "enum_body"):
+        body = _child_by_type(node, body_type)
+        if body is not None:
+            return body
+    return None
+
+
 def _find_ast_methods(root_node):
     """Yield all method_declaration and constructor_declaration nodes
     with (method_node, containing_class_type, class_modifiers_set).
     """
     for child in root_node.children:
         if child.type in ("class_declaration", "interface_declaration"):
-            body = _child_by_type(child, "class_body")
+            body = _get_class_interface_body(child)
             if body is None:
                 continue
             for member in body.children:
@@ -208,12 +217,20 @@ def _find_ast_fields(root_node):
     """Yield all field_declaration nodes with (field_node, containing_class_type, class_modifiers_set)."""
     for child in root_node.children:
         if child.type in ("class_declaration", "interface_declaration", "enum_declaration"):
-            body = _child_by_type(child, "class_body")
+            body = _get_class_interface_body(child)
             if body is None:
                 continue
             for member in body.children:
                 if member.type == "field_declaration":
                     yield member, child.type, _class_modifiers(child)
+
+
+def _find_formal_parameters(method_node) -> list:
+    """Return all formal_parameter nodes for a method, handling nested structure."""
+    formal_params = _child_by_type(method_node, "formal_parameters")
+    if formal_params:
+        return _children_by_type(formal_params, "formal_parameter")
+    return _find_formal_parameters(method_node)
 
 
 # ── Base Scanner ───────────────────────────────────────────────
@@ -719,11 +736,11 @@ class JavaAstScanner(BaseScanner):
                 if not _matches_on_dir(file_path, program["on_dir"]):
                     continue
 
-            # ── Class annotation filter ──
+            # ── Class annotation filter (also matches class name for backward compat) ──
             if "on_class_annotation" in program:
                 on_cls = program["on_class_annotation"]
                 # Skip if on_class_annotation is empty (matches all)
-                if on_cls and not _any_match(class_anns, on_cls):
+                if on_cls and not _any_match(class_anns + [class_name], on_cls):
                     continue
 
             target = program.get("target", "class")
@@ -783,7 +800,7 @@ class JavaAstScanner(BaseScanner):
         if program.get("required_private_constructor"):
             has_private_ctor = False
             if class_node:
-                class_body = _child_by_type(class_node, "class_body")
+                class_body = _get_class_interface_body(class_node)
                 if class_body:
                     for child in class_body.children:
                         if child.type == "constructor_declaration":
@@ -915,16 +932,11 @@ class JavaAstScanner(BaseScanner):
                         evidence="返回类型: void"
                     ))
 
-            # ── param_count_gte ──
+            # ── param_count_gte filter ──
             if "param_count_gte" in program:
-                param_nodes = _children_by_type(method_node, "formal_parameter")
-                if len(param_nodes) >= program["param_count_gte"]:
-                    findings.append(Finding(
-                        code=code, level=level, line=method_line,
-                        method=method_name,
-                        message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
-                        evidence=f"参数数量 {len(param_nodes)} >= {program['param_count_gte']}"
-                    ))
+                param_nodes = _find_formal_parameters(method_node)
+                if len(param_nodes) < program["param_count_gte"]:
+                    continue
 
             # ── Check parameters for missing annotation ──
             if "param_missing_annotation" in program:
@@ -933,7 +945,7 @@ class JavaAstScanner(BaseScanner):
                 match_param_type = program.get("match_param_type", "")
                 param_has_ann = program.get("param_has_annotation", "")
 
-                param_nodes = _children_by_type(method_node, "formal_parameter")
+                param_nodes = _find_formal_parameters(method_node)
                 for pn in param_nodes:
                     param_anns = _annotation_names(pn)
 
@@ -1011,7 +1023,7 @@ class JavaAstScanner(BaseScanner):
 
             # check @Validated group presence
             if program.get("check_validated_group"):
-                for pn in _children_by_type(method_node, "formal_parameter"):
+                for pn in _find_formal_parameters(method_node):
                     param_type_text = ""
                     for child in pn.children:
                         if child.type in ("type_identifier", "generic_type"):
@@ -1038,7 +1050,12 @@ class JavaAstScanner(BaseScanner):
         findings = []
 
         for field_node, containing_type, _ in _find_ast_fields(tree.root_node):
+            # identifier may be nested inside variable_declarator
             field_name_node = _child_by_type(field_node, "identifier")
+            if not field_name_node:
+                var_decl = _child_by_type(field_node, "variable_declarator")
+                if var_decl:
+                    field_name_node = _child_by_type(var_decl, "identifier")
             if not field_name_node:
                 continue
             field_name = _node_text(field_name_node, source_bytes)
