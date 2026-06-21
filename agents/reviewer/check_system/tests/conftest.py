@@ -40,11 +40,11 @@ BE-QL-29:
   description: "Controller DTO 参数缺少 @Validated"
   level: P1
   program:
-    scanner: java-annotation
-    on_class: "RestController|Controller"
-    target: method_param
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
     match_param_type: "DTO|Request|Command"
-    missing_annotation: "@Validated|@Valid"
+    param_missing_annotation: "@Valid|@Validated"
   message: "{method} 缺少 @Validated/@Valid 注解 DTO 参数"
 """)
 
