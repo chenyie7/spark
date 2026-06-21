@@ -483,6 +483,10 @@ class FileNamingScanner(BaseScanner):
 
             # ── must_be_in_root_package ──
             if program.get("must_be_in_root_package"):
+                # If pattern is specified, only check files matching the pattern
+                if "pattern" in program:
+                    if not fnmatch.fnmatch(file_name, program["pattern"]):
+                        continue
                 # Check if file is directly in one of the top-level package dirs
                 parent = file_path.parent
                 sibling_dirs = [
