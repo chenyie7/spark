@@ -1,9 +1,9 @@
-# 程序检查规则 —— 确定性的"有没有"问题，零 AI 参与
-# 每个检查项从 reviewer 规范文件中提取
-# strategy 控制执行范围：loose 仅 P0+P1，strict/normal 全量
+# 程序检查规则 —— 基于 tree-sitter-java AST 解析
+# scanner: java-ast 的规则通过结构化 AST 节点匹配，消除正则误报
+# scanner: package-structure / file-naming / config-check 保持不变
 
 # ═══════════════════════════════════════════════════════════════
-# Structure Review / 结构审查（13 项）
+# Structure Review / 结构审查
 # ═══════════════════════════════════════════════════════════════
 
 BE-ST-01:
@@ -91,37 +91,42 @@ BE-ST-20:
   description: "包名是否全部小写"
   level: P2
   program:
-    scanner: text-grep
-    pattern: "^package\\s+\\S*[A-Z]\\S*;"
+    scanner: java-ast
+    target: class
+    check_package_lowercase: true
   message: "包名应全部小写"
 
 BE-ST-21:
   description: "常量命名是否用 UPPER_SNAKE 风格"
   level: P2
   program:
-    scanner: text-grep
-    pattern: "static\\s+final\\s+\\w+\\s+[a-z]\\w*\\s*="
+    scanner: java-ast
+    target: field
+    check_constant_naming: true
   message: "常量命名应使用 UPPER_SNAKE 风格"
 
 BE-ST-22:
   description: "是否使用 @Autowired 字段注入"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "@Autowired"
+    scanner: java-ast
+    target: field
+    forbid_field_annotation: "@Autowired"
   message: "{class} 使用了 @Autowired 字段注入，应改用构造注入"
 
 BE-ST-23:
   description: "是否使用 @RequiredArgsConstructor + private final 构造注入"
   level: P1
   program:
-    scanner: java-annotation
-    on_class: "Service|ServiceImpl|Controller|RestController|Component"
+    scanner: java-ast
+    target: class
+    on_class_annotation: "Service|ServiceImpl|Controller|RestController|Component"
+    skip_interface: true
     required_class_annotation: "@RequiredArgsConstructor"
   message: "{class} 应使用 @RequiredArgsConstructor + private final 构造注入"
 
 # ═══════════════════════════════════════════════════════════════
-# Quality Review / 质量审查 —— JSR303 / Result / 日志 / 代码风格
+# Quality Review / 质量审查
 # ═══════════════════════════════════════════════════════════════
 
 # ── JSR 303 参数校验 ──
@@ -130,22 +135,22 @@ BE-QL-29:
   description: "Controller 方法的 DTO 参数是否加了 @Validated 或 @Valid"
   level: P1
   program:
-    scanner: java-annotation
-    on_class: "RestController|Controller"
-    target: method_param
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
     match_param_type: "DTO|Request|Command|Form"
-    missing_annotation: "@Validated|@Valid"
+    param_missing_annotation: "@Valid|@Validated"
   message: "{method} 缺少 @Validated/@Valid 注解 DTO 参数"
 
 BE-QL-30:
   description: "@Validated 是否指定了分组（Create/Update）"
   level: P2
   program:
-    scanner: java-annotation
-    on_class: "RestController|Controller"
-    target: method_param
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
     match_param_type: "DTO|Request|Command"
-    check_group_present: true
+    check_validated_group: true
   message: "{method} 的 @Validated 未指定分组"
 
 # ── Result 返回体 ──
@@ -154,8 +159,9 @@ BE-QL-13:
   description: "Controller 返回值是否用 Result<T> 包裹"
   level: P1
   program:
-    scanner: java-return-type
-    on_class: "RestController|Controller"
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
     required_return_pattern: "Result<"
   message: "{method} 返回值未使用 Result<T> 包裹"
 
@@ -163,20 +169,21 @@ BE-QL-15:
   description: "新增/修改/删除是否用 Result.success() 无 data 返回"
   level: P2
   program:
-    scanner: text-grep
-    on_class: "RestController|Controller"
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
     on_method_annotation: "PostMapping|PutMapping|DeleteMapping"
-    pattern: "return\\s+Result\\.success\\(\\s*\\)"
-    must_match: true
+    require_pattern_in_body: "Result\\.success\\(\\s*\\)"
   message: "{method} 应使用 Result.success() 无 data 返回"
 
 BE-QL-16:
   description: "分页查询是否返回 Result<PageResult<T>>"
   level: P2
   program:
-    scanner: java-return-type
-    on_class: "RestController|Controller"
-    on_method_name: "page|list"
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
+    match_method_name: "page|list"
     required_return_pattern: "PageResult<"
   message: "{method} 分页查询应返回 Result<PageResult<T>>"
 
@@ -184,19 +191,19 @@ BE-QL-17:
   description: "分页 DTO 是否继承 PageQueryDTO"
   level: P2
   program:
-    scanner: text-grep
+    scanner: java-ast
+    target: class
     on_dir: "dto"
-    pattern: "extends\\s+PageQueryDTO"
-    on_file_pattern: ".*(Page|Query|Search).*DTO\\.java"
-    must_match: true
+    require_pattern: "extends\\s+\\w*PageQueryDTO|extends\\s+\\w*PageRequest"
   message: "分页 DTO 应继承 PageQueryDTO"
 
 BE-QL-18:
   description: "成功消息是否固定为 ok"
   level: P2
   program:
-    scanner: text-grep
-    pattern: "Result\\.success\\(\\s*\"(?!ok\")[^\"]*\""
+    scanner: java-ast
+    target: all
+    forbid_pattern: 'Result\\.success\\(\\s*"(?!ok")[^"]*"'
   message: "成功消息应为 'ok'，不应返回自定义文本"
 
 # ── 日志规范 ──
@@ -205,16 +212,19 @@ BE-QL-07:
   description: "是否使用 System.out.println 或 System.err.println"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "System\\.(out|err)\\.print"
+    scanner: java-ast
+    target: all
+    forbid_pattern: "System\\.(out|err)\\.print"
   message: "使用 System.out/err，应使用 @Slf4j log"
 
 BE-QL-08:
   description: "业务类是否加了 @Slf4j"
   level: P2
   program:
-    scanner: java-annotation
-    on_class: "Service|ServiceImpl|Controller|RestController|Component"
+    scanner: java-ast
+    target: class
+    on_class_annotation: "Service|ServiceImpl|Controller|RestController|Component"
+    skip_interface: true
     required_class_annotation: "@Slf4j"
   message: "{class} 缺少 @Slf4j 注解"
 
@@ -222,21 +232,19 @@ BE-QL-09:
   description: "日志中是否打印了密码、手机号、Token、身份证等敏感信息"
   level: P0
   program:
-    scanner: text-grep
-    # 注意: token 关键词可能对 "token 已过期" 等合法日志产生误报，
-    # 已添加常见安全短语排除。程序预检标记后由 AI 审查员做语义判断。
-    pattern: "log\\.(info|warn|debug|error|trace)\\s*\\(.*(password|passwd|token|phone|mobile|idCard|idNumber|secret|apiKey)"
-    no_match_in_same_line: "(token\\s*(已过期|格式|验证|校验|过期|失效)|一次性\\s*token)"
-    context_lines: 1
+    scanner: java-ast
+    target: all
+    forbid_pattern: "log\\.(info|warn|debug|error|trace)\\s*\\(.*(password|passwd|token|phone|mobile|idCard|idNumber|secret|apiKey)"
   message: "日志中包含敏感信息"
 
 BE-QL-10:
   description: "Controller 方法内是否手写了请求日志"
   level: P2
   program:
-    scanner: text-grep
-    on_class: "RestController|Controller"
-    pattern: "log\\.info\\s*\\(.*request|log\\.info\\s*\\(.*请求"
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
+    forbid_pattern_in_body: "log\\.info.*(request|请求)"
   message: "手写了请求日志，应使用 Filter 统一拦截"
 
 # ── 代码风格 ──
@@ -245,16 +253,18 @@ BE-QL-33:
   description: "是否使用了禁止的 Lombok 注解"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "@SneakyThrows|@Cleanup|@Synchronized"
-  message: "{class} 使用了禁止的 Lombok 注解"
+    scanner: java-ast
+    target: all
+    forbid_pattern: "@SneakyThrows|@Cleanup|@Synchronized"
+  message: "使用了禁止的 Lombok 注解"
 
 BE-QL-38:
   description: "常量类是否 final + 私有构造"
   level: P2
   program:
-    scanner: java-annotation
-    on_class: ".*(Constant|Constants|Code|Codes)"
+    scanner: java-ast
+    target: class
+    on_class_annotation: ".*(Constant|Constants|Code|Codes)"
     required_class_modifier: "final"
     required_private_constructor: true
   message: "常量类应声明为 final + 私有构造"
@@ -263,24 +273,27 @@ BE-QL-40:
   description: "是否手动声明 Logger 字段而未用 @Slf4j"
   level: P2
   program:
-    scanner: text-grep
-    pattern: "private\\s+(static\\s+)?final\\s+Logger"
+    scanner: java-ast
+    target: field
+    forbid_field_type: "Logger"
   message: "手动声明 Logger，应使用 @Slf4j"
 
 BE-QL-42:
   description: "是否调用了 System.gc() / Runtime.gc()"
   level: P2
   program:
-    scanner: text-grep
-    pattern: "(System|Runtime)\\.gc\\(\\)"
+    scanner: java-ast
+    target: all
+    forbid_pattern: "(System|Runtime)\\.gc\\(\\)"
   message: "调用了 System.gc()，不应手动触发 GC"
 
 BE-QL-43:
   description: "是否使用了 finalize() 方法"
   level: P2
   program:
-    scanner: text-grep
-    pattern: "protected\\s+void\\s+finalize\\(\\)"
+    scanner: java-ast
+    target: all
+    forbid_pattern: "protected\\s+void\\s+finalize\\(\\)"
   message: "使用了 finalize()，JDK 已废弃"
 
 # ── 数据库规范 ──
@@ -289,8 +302,9 @@ BE-QL-27:
   description: "Entity 是否加了 @TableLogic 注解"
   level: P1
   program:
-    scanner: java-annotation
-    on_class: "*Entity"
+    scanner: java-ast
+    target: class
+    on_class_annotation: "*Entity"
     required_field_annotation: "@TableLogic"
   message: "{class} 缺少 @TableLogic 注解"
 
@@ -300,24 +314,24 @@ BE-QL-44:
   description: "Mapper 方法参数是否缺 @Param 注解"
   level: P1
   program:
-    scanner: java-annotation
-    on_class: "*Mapper"
-    target: method_param
+    scanner: java-ast
+    target: method
+    on_class_annotation: "*Mapper"
+    param_missing_annotation: "@Param"
     param_count_gte: 2
-    missing_annotation: "@Param"
-  message: "{method} 缺少 @Param 注解，XML 无法引用参数名"
+  message: "{method} 缺少 @Param 注解（多参数 Mapper 方法）"
 
 BE-QL-45:
   description: "是否用字符串字段名构建 MyBatis-Plus 条件"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "new\\s+QueryWrapper|new\\s+UpdateWrapper"
-    no_match_in_same_line: "Lambda"
+    scanner: java-ast
+    target: all
+    forbid_pattern: "new\\s+QueryWrapper|new\\s+UpdateWrapper"
   message: "使用字符串字段名构建条件，应使用 LambdaQueryWrapper/LambdaUpdateWrapper"
 
 # ═══════════════════════════════════════════════════════════════
-# Infrastructure Review / 基础设施审查（12 项）
+# Infrastructure Review / 基础设施审查
 # ═══════════════════════════════════════════════════════════════
 
 # ── Swagger ──
@@ -326,8 +340,9 @@ BE-IN-01:
   description: "Controller 类是否加了 @Tag(name = 模块名)"
   level: P2
   program:
-    scanner: java-annotation
-    on_class: "RestController|Controller"
+    scanner: java-ast
+    target: class
+    on_class_annotation: "RestController|Controller"
     required_class_annotation: "@Tag"
   message: "{class} 缺少 @Tag 注解"
 
@@ -335,41 +350,44 @@ BE-IN-02:
   description: "Controller 方法是否加了 @Operation(summary = 描述)"
   level: P2
   program:
-    scanner: java-annotation
-    on_class: "RestController|Controller"
-    on_public_method: true
-    missing_annotation: "@Operation"
+    scanner: java-ast
+    target: method
+    on_class_annotation: "RestController|Controller"
+    required_method_annotation: "@Operation"
   message: "{method} 缺少 @Operation 注解"
 
 BE-IN-03:
   description: "GET 的 @PathVariable/@RequestParam 是否加了 @Parameter"
   level: P2
   program:
-    scanner: java-annotation
+    scanner: java-ast
+    target: method
     on_method_annotation: "GetMapping"
-    target: method_param
-    match_annotation: "PathVariable|RequestParam"
-    missing_annotation: "@Parameter"
+    match_param_type: ".*"
+    param_missing_annotation: "@Parameter"
+    param_has_annotation: "PathVariable|RequestParam"
   message: "{method} 的 {param} 缺少 @Parameter 注解"
 
 BE-IN-04:
   description: "DTO 字段是否加了 @Schema(description = ...)"
   level: P2
   program:
-    scanner: java-annotation
-    on_dir: "dto"
+    scanner: java-ast
     target: field
-    missing_annotation: "@Schema"
+    on_dir: "dto"
+    skip_static_final: true
+    required_field_annotation: "@Schema"
   message: "{class}.{field} 缺少 @Schema 注解"
 
 BE-IN-05:
   description: "VO 字段是否加了 @Schema(description = ...)"
   level: P2
   program:
-    scanner: java-annotation
-    on_file_pattern: "*VO.java"
+    scanner: java-ast
     target: field
-    missing_annotation: "@Schema"
+    on_dir: "vo"
+    skip_static_final: true
+    required_field_annotation: "@Schema"
   message: "{class}.{field} 缺少 @Schema 注解"
 
 BE-IN-07:
@@ -408,16 +426,18 @@ BE-IN-10:
   description: "是否用 @Value 散落配置（应使用 @ConfigurationProperties）"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "@Value\\(\"\\$\\{"
+    scanner: java-ast
+    target: all
+    forbid_pattern: '@Value\\(\\"\\$\\{'
   message: "应使用 @ConfigurationProperties 替代 @Value 散落"
 
 BE-IN-15:
   description: "是否直接使用 RedisTemplate（应使用 RedisUtil 封装）"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "RedisTemplate"
+    scanner: java-ast
+    target: all
+    forbid_pattern: "RedisTemplate"
   message: "应使用 RedisUtil 封装，不直接使用 RedisTemplate"
 
 # ── 文件上传安全 ──
@@ -426,29 +446,31 @@ BE-IN-30:
   description: "文件名是否由服务端生成（未使用用户原始文件名）"
   level: P0
   program:
-    scanner: text-grep
-    pattern: "(getOriginalFilename|originalFilename|fileName\\.getName)"
-    context_lines: 1
+    scanner: java-ast
+    target: all
+    forbid_pattern: "(getOriginalFilename|originalFilename|fileName\\.getName)"
   message: "使用了用户原始文件名做存储路径，存在路径遍历风险"
 
 BE-IN-31:
   description: "上传文件是否存放到 static/ 或 resources/ 目录"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "(static/|resources/).*upload|upload.*(static/|resources/)"
+    scanner: java-ast
+    target: all
+    forbid_pattern: "(static/|resources/).*upload|upload.*(static/|resources/)"
   message: "文件存储路径不应在 static/resources 下，可被直接 URL 访问"
 
 # ═══════════════════════════════════════════════════════════════
-# Auth Review / 认证审查（8 项）
+# Auth Review / 认证审查
 # ═══════════════════════════════════════════════════════════════
 
 BE-AU-02:
   description: "多端场景下是否直接使用 StpUtil 而未通过 StpKit 门面"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "import\\s+cn\\.dev33\\.satoken\\.StpUtil|StpUtil\\."
+    scanner: java-ast
+    target: all
+    forbid_pattern: "import\\s+cn\\.dev33\\.satoken\\.StpUtil|StpUtil\\."
   message: "直接使用了 StpUtil，多端场景应使用 StpKit 门面"
 
 BE-AU-05:
@@ -465,50 +487,55 @@ BE-AU-07:
   description: "登录密码是否使用 BCryptPasswordEncoder 加密"
   level: P0
   program:
-    scanner: text-grep
-    pattern: "new\\s+BCryptPasswordEncoder|BCryptPasswordEncoder"
-    on_dir: "config|security"
-    must_match: true
+    scanner: java-ast
+    target: class
+    on_class_annotation: "Service|ServiceImpl"
+    require_pattern: "BCryptPasswordEncoder"
   message: "密码未使用 BCryptPasswordEncoder 加密"
 
 BE-AU-15:
   description: "权限注解是否放在 Controller 层而非 Service 层"
   level: P1
   program:
-    scanner: text-grep
+    scanner: java-ast
+    target: class
     on_dir: "service"
-    pattern: "@SaCheck(Permission|Role|Login)"
+    forbid_pattern: "@SaCheck(Permission|Role|Login)"
   message: "权限注解应放在 Controller 层，Service 层不应有权限注解"
 
 BE-AU-18:
   description: "权限码是否定义在常量类中，未硬编码字符串"
   level: P1
   program:
-    scanner: text-grep
-    pattern: "@SaCheckPermission\\(\""
+    scanner: java-ast
+    target: all
+    forbid_pattern: '@SaCheckPermission\\("'
   message: "硬编码权限码字符串，应使用 PermissionCodes 常量"
 
 BE-AU-21:
   description: "Service 是否直接注入 HttpServletRequest"
   level: P0
   program:
-    scanner: text-grep
+    scanner: java-ast
+    target: all
     on_dir: "service"
-    pattern: "HttpServletRequest"
+    forbid_pattern: "HttpServletRequest"
   message: "Service 直接注入了 HttpServletRequest"
 
 BE-AU-31:
   description: "密码是否明文存储"
   level: P0
   program:
-    scanner: text-grep
-    pattern: "setPassword\\(\"(?!.*encode|.*BCrypt|.*\\$2a\\$)[^\"]+\"\\)|password\\s*=\\s*\"(?!.*encode|.*BCrypt|.*\\$2a\\$)[^\"]+\""
+    scanner: java-ast
+    target: all
+    forbid_pattern: "setPassword\\(\"(?!.*encode|.*BCrypt|.*\\$2a\\$)[^\"]+\"\\)|password\\s*=\\s*\"(?!.*encode|.*BCrypt|.*\\$2a\\$)[^\"]+\""
   message: "密码明文存储"
 
 BE-AU-32:
   description: "Token/密钥是否硬编码在代码中"
   level: P0
   program:
-    scanner: text-grep
-    pattern: "(secret|apiKey|api-key|accessKey)\\s*=\\s*\"[^\"]{8,}\""
+    scanner: java-ast
+    target: all
+    forbid_pattern: "(secret|apiKey|api-key|accessKey)\\s*=\\s*\"[^\"]{8,}\""
   message: "Token/密钥硬编码在代码中"
