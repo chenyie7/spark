@@ -17,6 +17,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+import tree_sitter
+import tree_sitter_java as tsjava
+
 from code_check.models import (
     BlockingStrategy,
     Finding,
@@ -157,8 +160,15 @@ def _matches_on_dir(file_path: Path, on_dir: str) -> bool:
 
 
 def _has_annotation(content: str, annotation_pattern: str) -> bool:
-    """Return True if *annotation_pattern* is found anywhere in *content*."""
-    return bool(re.search(rf"\b{annotation_pattern}\b", content))
+    """Return True if *annotation_pattern* is found anywhere in *content*.
+
+    Handles ``@``-prefixed annotation patterns (e.g. ``@Slf4j``) where ``\\b``
+    cannot anchor before ``@`` because ``@`` is not a word character.
+    """
+    if annotation_pattern.startswith("@"):
+        # Search for the literal annotation text (allow preceding whitespace/line-start)
+        return bool(re.search(rf"(?:^|\s){re.escape(annotation_pattern)}", content, re.MULTILINE))
+    return bool(re.search(rf"\b{re.escape(annotation_pattern)}\b", content))
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -448,6 +458,123 @@ def _get_fields(content: str) -> list[dict]:
             }
         )
     return fields
+
+
+# ── tree-sitter initialization ──────────────────────────────────
+
+_TS_LANGUAGE = tree_sitter.Language(tsjava.language())
+_TS_PARSER = tree_sitter.Parser(_TS_LANGUAGE)
+
+
+def _parse_java_source(source: bytes) -> tree_sitter.Tree:
+    """Parse Java source bytes into a tree-sitter concrete syntax tree."""
+    return _TS_PARSER.parse(source)
+
+
+# ── AST Node Helpers ─────────────────────────────────────────────
+
+
+def _node_text(node, source: bytes) -> str:
+    """Return the source text of a tree-sitter node."""
+    return source[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+
+
+def _child_by_type(node, type_name: str):
+    """Return the first immediate child of *node* with the given type name."""
+    for child in node.children:
+        if child.type == type_name:
+            return child
+    return None
+
+
+def _children_by_type(node, type_name: str) -> list:
+    """Return all immediate children of *node* with the given type name."""
+    return [child for child in node.children if child.type == type_name]
+
+
+def _descendants_by_type(node, type_name: str) -> list:
+    """Return all descendant nodes (recursive) of *node* with the given type name."""
+    result = []
+    for child in node.children:
+        if child.type == type_name:
+            result.append(child)
+        result.extend(_descendants_by_type(child, type_name))
+    return result
+
+
+def _has_modifier(node, modifier: str) -> bool:
+    """Check if *node* has a specific modifier in its modifiers child."""
+    mods = _child_by_type(node, "modifiers")
+    if mods is None:
+        return False
+    return any(child.type == modifier for child in mods.children)
+
+
+def _class_modifiers(class_node) -> set:
+    """Return the set of modifier keywords on a class/interface declaration."""
+    mods = _child_by_type(class_node, "modifiers")
+    if mods is None:
+        return set()
+    return {child.type for child in mods.children}
+
+
+def _annotation_names(node) -> list[str]:
+    """Return the simple names of all annotations on *node*.
+
+    Handles both marker_annotation (@Override) and annotation (@Schema(...)).
+    """
+    mods = _child_by_type(node, "modifiers")
+    if mods is None:
+        return []
+    names = []
+    for child in mods.children:
+        if child.type == "marker_annotation":
+            name_node = _child_by_type(child, "identifier")
+            if name_node:
+                names.append(child.text.decode("utf-8", errors="replace"))
+        elif child.type == "annotation":
+            name_node = _child_by_type(child, "identifier")
+            if name_node:
+                names.append(child.text.decode("utf-8", errors="replace"))
+    return names
+
+
+def _find_class_node(tree: tree_sitter.Tree) -> tuple:
+    """Find the primary class or interface declaration node and its name.
+    Returns (node, name) or (None, "").
+    """
+    for child in tree.root_node.children:
+        if child.type in ("class_declaration", "interface_declaration"):
+            name_node = _child_by_type(child, "identifier")
+            name = name_node.text.decode("utf-8", errors="replace") if name_node else ""
+            return child, name
+    return None, ""
+
+
+def _find_methods(root_node):
+    """Yield all method_declaration and constructor_declaration nodes
+    with (method_node, containing_class_type, class_modifiers_set).
+    """
+    for child in root_node.children:
+        if child.type in ("class_declaration", "interface_declaration"):
+            body = _child_by_type(child, "class_body")
+            if body is None:
+                continue
+            for member in body.children:
+                if member.type in ("method_declaration", "constructor_declaration"):
+                    yield member, child.type, _class_modifiers(child)
+
+
+def _find_fields(root_node):
+    """Yield all field_declaration nodes with (field_node, containing_class_type, class_modifiers_set)."""
+    for child in root_node.children:
+        if child.type in ("class_declaration", "interface_declaration", "enum_declaration"):
+            body = _child_by_type(child, "class_body")
+            if body is None:
+                continue
+            for member in body.children:
+                if member.type == "field_declaration":
+                    yield member, child.type, _class_modifiers(child)
 
 
 # ── Base Scanner ───────────────────────────────────────────────
