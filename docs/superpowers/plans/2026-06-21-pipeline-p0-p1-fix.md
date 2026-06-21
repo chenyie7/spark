@@ -16,7 +16,7 @@
 |------|------|---------|
 | `hooks/block-agents-write.sh` | PreToolUse hook 脚本，拦截对 agents/ 的 Write/Edit | **新建** |
 | `.claude/settings.json` | 注册 PreToolUse hook | 修改 |
-| `agents/reviewer/check_system/code-check-config.yaml` | output_dir 迁到根目录 + strategy 改为 normal | 修改 |
+| `agents/reviewer/check_system/code-check-config.yaml` | output_dir 迁到根目录 | 修改 |
 | `agents/reviewer/hooks/review-pre-hook.sh` | 预检 hook，产物路径迁到根目录 | 修改 |
 | `agents/reviewer/hooks/review-post-hook.sh` | 合并报告 hook，产物路径迁到根目录 | 修改 |
 | `agents/scheduler/pipeline.yaml` | reviewer outputs 路径缩短 + coder prompt 加边界约束 | 修改 |
@@ -227,14 +227,14 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: 更新 code-check-config.yaml — output_dir + strategy
+### Task 3: 更新 code-check-config.yaml — output_dir 路径迁移
 
 **Files:**
-- Modify: `agents/reviewer/check_system/code-check-config.yaml`（2 处修改：output_dir 路径 + strategy 值）
+- Modify: `agents/reviewer/check_system/code-check-config.yaml`（1 处修改：output_dir 路径）
 
 - [ ] **Step 1: 修改 output_dir 路径**
 
-定位到第 10 行 `output_dir: ./review-output/`，替换为：
+定位到 `output_dir: ./review-output/`，替换为：
 
 ```yaml
 output_dir: ../../../review-output/
@@ -242,22 +242,14 @@ output_dir: ../../../review-output/
 
 原理：`code-check-config.yaml` 在 `check_system/` 目录下，`../../../` 向上三级到项目根目录，`review-output/` 在根目录下。
 
-- [ ] **Step 2: 修改阻断策略**
-
-定位到第 5 行 `strategy: strict`，替换为：
-
-```yaml
-strategy: normal
-```
-
-- [ ] **Step 3: 验证 YAML 语法**
+- [ ] **Step 2: 验证 YAML 语法**
 
 ```bash
 python3 -c "import yaml; yaml.safe_load(open('agents/reviewer/check_system/code-check-config.yaml')); print('YAML OK')"
 ```
 Expected: `YAML OK`
 
-- [ ] **Step 4: 验证 output_dir 解析正确**
+- [ ] **Step 3: 验证 output_dir 解析正确**
 
 ```bash
 cd agents/reviewer/check_system && python3 -c "
@@ -274,14 +266,13 @@ print('Path OK')
 ```
 Expected: `Path OK`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add agents/reviewer/check_system/code-check-config.yaml
-git commit -m "fix: migrate review-output to project root, change block strategy to normal
+git commit -m "fix: migrate review-output to project root directory
 
 - output_dir: ./review-output/ → ../../../review-output/
-- strategy: strict → normal (P1 no longer blocks, only P0)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -664,7 +655,6 @@ from code_check.config import load_config
 cfg = load_config('code-check-config.yaml')
 print(f'output_dir: {cfg.output_dir}')
 print(f'strategy: {cfg.strategy}')
-assert cfg.strategy == 'normal', f'Expected strategy=normal, got {cfg.strategy}'
 print('Config OK')
 "
 ```
