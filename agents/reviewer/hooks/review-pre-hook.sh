@@ -45,7 +45,7 @@ if [ $EXIT_CODE -ne 0 ]; then
     echo "============================================"
     echo " Pre-hook: 阻断"
     echo " 程序预检未通过，请修复后再继续。"
-    echo " 详细报告: $CHECK_SYSTEM_DIR/review-output/pre-check-report.md"
+    echo " 详细报告: $PROJECT_DIR/review-output/pre-check-report.md"
     echo "============================================"
     exit 1
 fi

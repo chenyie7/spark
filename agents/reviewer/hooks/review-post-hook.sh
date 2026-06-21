@@ -5,13 +5,14 @@
 
 set -euo pipefail
 
-PRE_CHECK_JSON="${1:-./review-output/pre-check-result.json}"
-AI_CHECK_JSON="${2:-./review-output/review-result.json}"
-OUTPUT_MD="${3:-./review-output/final-review-report.md}"
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # hooks/ → reviewer/ → agents/ → project root
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+PRE_CHECK_JSON="${1:-$PROJECT_DIR/review-output/pre-check-result.json}"
+AI_CHECK_JSON="${2:-$PROJECT_DIR/review-output/review-result.json}"
+OUTPUT_MD="${3:-$PROJECT_DIR/review-output/final-review-report.md}"
+
 CHECK_SYSTEM_DIR="$PROJECT_DIR/agents/reviewer/check_system"
 
 cd "$CHECK_SYSTEM_DIR"
@@ -42,5 +43,5 @@ $CMD
 echo ""
 echo "============================================"
 echo " Post-hook: 完成"
-echo " 最终报告: $CHECK_SYSTEM_DIR/$OUTPUT_MD"
+echo " 最终报告: $OUTPUT_MD"
 echo "============================================"
