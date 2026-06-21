@@ -551,7 +551,7 @@ def _find_class_node(tree: tree_sitter.Tree) -> tuple:
     return None, ""
 
 
-def _find_methods(root_node):
+def _find_ast_methods(root_node):
     """Yield all method_declaration and constructor_declaration nodes
     with (method_node, containing_class_type, class_modifiers_set).
     """
@@ -565,7 +565,7 @@ def _find_methods(root_node):
                     yield member, child.type, _class_modifiers(child)
 
 
-def _find_fields(root_node):
+def _find_ast_fields(root_node):
     """Yield all field_declaration nodes with (field_node, containing_class_type, class_modifiers_set)."""
     for child in root_node.children:
         if child.type in ("class_declaration", "interface_declaration", "enum_declaration"):
@@ -1625,7 +1625,467 @@ def _find_nested_yaml(content: str, flat_pattern: str) -> int | None:
 
     return None
 
+# ── Java AST Scanner ────────────────────────────────────────────
+
+
+class JavaAstScanner(BaseScanner):
+    """AST-based scanner using tree-sitter-java.
+
+    Replaces TextGrepScanner, JavaAnnotationScanner, and JavaReturnTypeScanner.
+    Parses Java source into a concrete syntax tree, then matches rules
+    against structured AST nodes (class_declaration vs interface_declaration,
+    field_declaration modifiers, method_declaration return types, etc.).
+    """
+
+    scanner_name = "java-ast"
+
+    def scan(self, file_path: Path, rules: dict) -> list[Finding]:
+        findings: list[Finding] = []
+        my_rules = self._rules_for_scanner(rules, self.scanner_name)
+        if not my_rules:
+            return findings
+
+        source_bytes = file_path.read_bytes()
+        tree = _parse_java_source(source_bytes)
+        class_node, class_name = _find_class_node(tree)
+        class_type = class_node.type if class_node else ""
+        class_anns = _annotation_names(class_node) if class_node else []
+
+        for code, rule in my_rules.items():
+            program = rule["program"]
+            level = Level(rule["level"])
+            msg = rule["message"]
+
+            # ── Directory filter ──
+            if "on_dir" in program:
+                if not _matches_on_dir(file_path, program["on_dir"]):
+                    continue
+
+            # ── Class annotation filter ──
+            if "on_class_annotation" in program:
+                on_cls = program["on_class_annotation"]
+                # Skip if on_class_annotation is empty (matches all)
+                if on_cls and not _any_match(class_anns, on_cls):
+                    continue
+
+            target = program.get("target", "class")
+
+            if target == "class":
+                findings.extend(
+                    self._check_class(tree, source_bytes, code, level, msg, program, class_node, class_name, class_type)
+                )
+            elif target == "method":
+                findings.extend(
+                    self._check_methods(tree, source_bytes, code, level, msg, program, class_node, class_name, class_type)
+                )
+            elif target == "field":
+                findings.extend(
+                    self._check_fields(tree, source_bytes, code, level, msg, program, class_node, class_name, class_type)
+                )
+            elif target == "all":
+                findings.extend(
+                    self._check_all(source_bytes, code, level, msg, program, file_path)
+                )
+
+        findings.sort(key=lambda f: f.line)
+        return findings
+
+    def _check_class(self, tree, source_bytes, code, level, msg, program, class_node, class_name, class_type):
+        """Check class-level rules: annotations, modifiers, extends, naming."""
+        findings = []
+
+        if program.get("skip_interface") and class_type == "interface_declaration":
+            return findings
+
+        line = class_node.start_point[0] + 1 if class_node else 0
+
+        # ── required_class_annotation ──
+        if "required_class_annotation" in program:
+            needed = program["required_class_annotation"].lstrip("@")
+            anns = _annotation_names(class_node) if class_node else []
+            if needed not in anns:
+                findings.append(Finding(
+                    code=code, level=level, line=line,
+                    message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": ""}),
+                    evidence=f"缺少 @{needed} 注解"
+                ))
+
+        # ── required_class_modifier ──
+        if "required_class_modifier" in program:
+            mod_needed = program["required_class_modifier"]
+            mods = _class_modifiers(class_node) if class_node else set()
+            if mod_needed not in mods:
+                findings.append(Finding(
+                    code=code, level=level, line=line,
+                    message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": ""}),
+                    evidence=f"类缺少 {mod_needed} 修饰符"
+                ))
+
+        # ── required_private_constructor ──
+        if program.get("required_private_constructor"):
+            has_private_ctor = False
+            if class_node:
+                class_body = _child_by_type(class_node, "class_body")
+                if class_body:
+                    for child in class_body.children:
+                        if child.type == "constructor_declaration":
+                            if _has_modifier(child, "private"):
+                                has_private_ctor = True
+                                break
+            if not has_private_ctor:
+                findings.append(Finding(
+                    code=code, level=level, line=line,
+                    message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": ""}),
+                    evidence="类缺少私有构造器"
+                ))
+
+        # ── required_field_annotation on class ──
+        if "required_field_annotation" in program:
+            needed = program["required_field_annotation"].lstrip("@")
+            found = False
+            for field_node, _, _ in _find_ast_fields(tree.root_node):
+                ann_texts = _annotation_names(field_node)
+                if needed in ann_texts:
+                    found = True
+                    break
+            if not found:
+                findings.append(Finding(
+                    code=code, level=level, line=line,
+                    message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": ""}),
+                    evidence=f"缺少 @{needed} 注解（字段级别）"
+                ))
+
+        # ── forbid_pattern on class ──
+        if "forbid_pattern" in program:
+            pattern = re.compile(program["forbid_pattern"])
+            class_text = _node_text(class_node, source_bytes) if class_node else ""
+            for lineno_offset, line_text in enumerate(class_text.split("\n")):
+                if pattern.search(line_text):
+                    findings.append(Finding(
+                        code=code, level=level, line=line + lineno_offset,
+                        message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": ""}),
+                        evidence=line_text.strip()[:120]
+                    ))
+                    break
+
+        # ── require_pattern on class ──
+        if "require_pattern" in program:
+            pattern = re.compile(program["require_pattern"])
+            class_text = _node_text(class_node, source_bytes) if class_node else ""
+            found = any(pattern.search(line) for line in class_text.split("\n"))
+            if not found:
+                findings.append(Finding(
+                    code=code, level=level, line=line,
+                    message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": ""}),
+                    evidence=f"未找到匹配: {program['require_pattern']}"
+                ))
+
+        # ── package_lowercase check ──
+        if program.get("check_package_lowercase"):
+            for child in tree.root_node.children:
+                if child.type == "package_declaration":
+                    pkg_text = _node_text(child, source_bytes)
+                    if re.search(r'package\s+\S*[A-Z]\S*;', pkg_text):
+                        findings.append(Finding(
+                            code=code, level=level, line=child.start_point[0] + 1,
+                            message=msg,
+                            evidence=pkg_text.strip()
+                        ))
+                    break
+
+        return findings
+
+    def _check_methods(self, tree, source_bytes, code, level, msg, program, class_node, class_name, class_type):
+        """Check method-level rules: annotations, return type, parameter count, body patterns."""
+        findings = []
+
+        on_method_ann = program.get("on_method_annotation", "")
+        match_method_name = program.get("match_method_name", "")
+
+        for method_node, containing_type, _ in _find_ast_methods(tree.root_node):
+            method_name_node = _child_by_type(method_node, "identifier")
+            method_name = _node_text(method_name_node, source_bytes) if method_name_node else ""
+            method_line = method_node.start_point[0] + 1
+            method_anns = _annotation_names(method_node)
+
+            # ── Filter by method annotation ──
+            if on_method_ann:
+                patterns = on_method_ann.split("|")
+                if not any(any(pat.strip() in a for a in method_anns) for pat in patterns if pat.strip()):
+                    continue
+
+            # ── Filter by method name ──
+            if match_method_name:
+                patterns = match_method_name.split("|")
+                if not any(re.search(pat.strip(), method_name) for pat in patterns if pat.strip()):
+                    continue
+
+            # ── required_method_annotation ──
+            if "required_method_annotation" in program:
+                needed = program["required_method_annotation"].lstrip("@")
+                if needed not in method_anns:
+                    findings.append(Finding(
+                        code=code, level=level, line=method_line,
+                        method=method_name,
+                        message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
+                        evidence=f"方法 {method_name} 缺少 @{needed}"
+                    ))
+
+            # ── required_return_pattern ──
+            if "required_return_pattern" in program:
+                ret_type_node = None
+                for child in method_node.children:
+                    # Skip modifiers, annotations, type_parameters — look for type_identifier or generic_type
+                    if child.type in ("type_identifier", "generic_type", "void_type", "integral_type",
+                                       "floating_point_type", "boolean_type", "array_type", "scoped_type_identifier"):
+                        ret_type_node = child
+                        break
+                if ret_type_node:
+                    ret_text = _node_text(ret_type_node, source_bytes)
+                    if program["required_return_pattern"] not in ret_text:
+                        findings.append(Finding(
+                            code=code, level=level, line=method_line,
+                            method=method_name,
+                            message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
+                            evidence=f"返回类型: {ret_text}"
+                        ))
+                else:
+                    findings.append(Finding(
+                        code=code, level=level, line=method_line,
+                        method=method_name,
+                        message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
+                        evidence="返回类型: void"
+                    ))
+
+            # ── param_count_gte ──
+            if "param_count_gte" in program:
+                param_nodes = _children_by_type(method_node, "formal_parameter")
+                if len(param_nodes) >= program["param_count_gte"]:
+                    findings.append(Finding(
+                        code=code, level=level, line=method_line,
+                        method=method_name,
+                        message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
+                        evidence=f"参数数量 {len(param_nodes)} >= {program['param_count_gte']}"
+                    ))
+
+            # ── Check parameters for missing annotation ──
+            if "param_missing_annotation" in program:
+                needed_anns = program["param_missing_annotation"].lstrip("@").split("|")
+                needed_anns = [a.strip() for a in needed_anns]
+                match_param_type = program.get("match_param_type", "")
+                param_has_ann = program.get("param_has_annotation", "")
+
+                param_nodes = _children_by_type(method_node, "formal_parameter")
+                for pn in param_nodes:
+                    param_anns = _annotation_names(pn)
+
+                    # Check if param already has the needed annotation
+                    has_needed = any(na in param_anns for na in needed_anns)
+                    if has_needed:
+                        continue
+
+                    # Filter by param annotation (e.g., only check params with @PathVariable/@RequestParam)
+                    if param_has_ann:
+                        req_anns = param_has_ann.split("|")
+                        if not any(any(ra.strip() in a for a in param_anns) for ra in req_anns if ra.strip()):
+                            continue
+
+                    # Filter by param type
+                    type_node = None
+                    for child in pn.children:
+                        if child.type in ("type_identifier", "generic_type", "scoped_type_identifier",
+                                           "integral_type", "floating_point_type", "boolean_type", "array_type"):
+                            type_node = child
+                            break
+                    param_type = _node_text(type_node, source_bytes) if type_node else ""
+
+                    if match_param_type and not re.search(match_param_type, param_type):
+                        continue
+
+                    param_name_node = _child_by_type(pn, "identifier")
+                    param_name = _node_text(param_name_node, source_bytes) if param_name_node else "?"
+
+                    findings.append(Finding(
+                        code=code, level=level, line=method_line,
+                        method=method_name,
+                        message=_safe_format(msg, {
+                            "class": class_name, "class_": class_name,
+                            "method": method_name, "param": f"{param_type} {param_name}"
+                        }),
+                        evidence=f"参数缺少注解: {param_type} {param_name}"
+                    ))
+
+            # ── Check method body for patterns ──
+            body_node = None
+            for child in method_node.children:
+                if child.type == "block":
+                    body_node = child
+                    break
+
+            if body_node is None:
+                continue
+
+            body_text = _node_text(body_node, source_bytes)
+
+            # forbid_pattern_in_body
+            if "forbid_pattern_in_body" in program:
+                regex = re.compile(program["forbid_pattern_in_body"])
+                for lineno_offset, line_text in enumerate(body_text.split("\n")):
+                    if regex.search(line_text):
+                        findings.append(Finding(
+                            code=code, level=level, line=body_node.start_point[0] + 1 + lineno_offset,
+                            method=method_name,
+                            message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
+                            evidence=line_text.strip()[:120]
+                        ))
+
+            # require_pattern_in_body
+            if "require_pattern_in_body" in program:
+                pattern = re.compile(program["require_pattern_in_body"])
+                found = any(pattern.search(line) for line in body_text.split("\n"))
+                if not found:
+                    findings.append(Finding(
+                        code=code, level=level, line=method_line,
+                        method=method_name,
+                        message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
+                        evidence=f"方法体中未找到: {program['require_pattern_in_body']}"
+                    ))
+
+            # check @Validated group presence
+            if program.get("check_validated_group"):
+                for pn in _children_by_type(method_node, "formal_parameter"):
+                    param_type_text = ""
+                    for child in pn.children:
+                        if child.type in ("type_identifier", "generic_type"):
+                            param_type_text = _node_text(child, source_bytes)
+                            break
+                    # Only check DTO-type params
+                    if not re.search(program.get("match_param_type", "DTO|Request|Command"), param_type_text):
+                        continue
+                    for child in pn.children:
+                        if child.type == "annotation":
+                            ann_text = _node_text(child, source_bytes)
+                            if "Validated" in ann_text and "(" not in ann_text:
+                                findings.append(Finding(
+                                    code=code, level=level, line=method_line,
+                                    method=method_name,
+                                    message=_safe_format(msg, {"class": class_name, "class_": class_name, "method": method_name}),
+                                    evidence=f"@Validated 未指定分组: {ann_text}"
+                                ))
+
+        return findings
+
+    def _check_fields(self, tree, source_bytes, code, level, msg, program, class_node, class_name, class_type):
+        """Check field-level rules: annotations, naming, types."""
+        findings = []
+
+        for field_node, containing_type, _ in _find_ast_fields(tree.root_node):
+            field_name_node = _child_by_type(field_node, "identifier")
+            if not field_name_node:
+                continue
+            field_name = _node_text(field_name_node, source_bytes)
+            field_line = field_node.start_point[0] + 1
+            field_anns = _annotation_names(field_node)
+            is_static = _has_modifier(field_node, "static")
+            is_final = _has_modifier(field_node, "final")
+
+            # ── Skip static final fields ──
+            if program.get("skip_static_final") and is_static and is_final:
+                continue
+
+            type_node = _child_by_type(field_node, "type_identifier")
+            field_type = _node_text(type_node, source_bytes) if type_node else ""
+
+            # ── Filter by field type ──
+            if "on_field_type" in program:
+                if not re.search(program["on_field_type"], field_type):
+                    continue
+
+            # ── required_field_annotation ──
+            if "required_field_annotation" in program:
+                needed = program["required_field_annotation"].lstrip("@")
+                if needed not in field_anns:
+                    findings.append(Finding(
+                        code=code, level=level, line=field_line,
+                        message=_safe_format(msg, {
+                            "class": class_name, "class_": class_name,
+                            "field": field_name, "method": ""
+                        }),
+                        evidence=f"字段 {field_type} {field_name} 缺少 @{needed} 注解"
+                    ))
+
+            # ── forbid_field_annotation ──
+            if "forbid_field_annotation" in program:
+                forbidden = program["forbid_field_annotation"].lstrip("@")
+                if forbidden in field_anns:
+                    findings.append(Finding(
+                        code=code, level=level, line=field_line,
+                        message=_safe_format(msg, {
+                            "class": class_name, "class_": class_name,
+                            "field": field_name, "method": ""
+                        }),
+                        evidence=f"字段 {field_type} {field_name} 存在禁止的注解 @{forbidden}"
+                    ))
+
+            # ── forbid_field_type ──
+            if "forbid_field_type" in program:
+                if re.search(program["forbid_field_type"], field_type):
+                    findings.append(Finding(
+                        code=code, level=level, line=field_line,
+                        message=_safe_format(msg, {
+                            "class": class_name, "class_": class_name,
+                            "field": field_name, "method": ""
+                        }),
+                        evidence=f"字段 {field_type} {field_name}"
+                    ))
+
+            # ── Constant naming check ──
+            if program.get("check_constant_naming") and is_static and is_final:
+                if field_name and re.search(r'^[a-z]', field_name):
+                    findings.append(Finding(
+                        code=code, level=level, line=field_line,
+                        message=_safe_format(msg, {
+                            "class": class_name, "class_": class_name,
+                            "field": field_name, "method": ""
+                        }),
+                        evidence=f"常量命名应使用 UPPER_SNAKE: {field_name}"
+                    ))
+
+        return findings
+
+    def _check_all(self, source_bytes, code, level, msg, program, file_path):
+        """Check across the entire file: text patterns in source lines."""
+        findings = []
+        full_text = source_bytes.decode("utf-8", errors="replace")
+        lines = full_text.split("\n")
+
+        # ── forbid_pattern (whole file) ──
+        if "forbid_pattern" in program:
+            pattern = re.compile(program["forbid_pattern"])
+            for lineno, line_text in enumerate(lines, 1):
+                if pattern.search(line_text):
+                    findings.append(Finding(
+                        code=code, level=level, line=lineno,
+                        message=msg,
+                        evidence=line_text.strip()[:120]
+                    ))
+
+        # ── require_pattern (whole file) ──
+        if "require_pattern" in program:
+            pattern = re.compile(program["require_pattern"])
+            found = any(pattern.search(line) for line in lines)
+            if not found:
+                findings.append(Finding(
+                    code=code, level=level, line=1,
+                    message=msg,
+                    evidence=f"未找到匹配: {program['require_pattern']}"
+                ))
+
+        return findings
+
+
 SCANNERS: dict[str, BaseScanner] = {
+    "java-ast": JavaAstScanner(),
     "text-grep": TextGrepScanner(),
     "java-annotation": JavaAnnotationScanner(),
     "java-return-type": JavaReturnTypeScanner(),

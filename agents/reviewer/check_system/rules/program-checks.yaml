@@ -203,7 +203,7 @@ BE-QL-18:
   program:
     scanner: java-ast
     target: all
-    forbid_pattern: 'Result\\.success\\(\\s*"(?!ok")[^"]*"'
+    forbid_pattern: 'Result\.success\(\s*"(?!ok")[^"]*"'
   message: "成功消息应为 'ok'，不应返回自定义文本"
 
 # ── 日志规范 ──
@@ -428,7 +428,7 @@ BE-IN-10:
   program:
     scanner: java-ast
     target: all
-    forbid_pattern: '@Value\\(\\"\\$\\{'
+    forbid_pattern: '@Value\("\$\{'
   message: "应使用 @ConfigurationProperties 替代 @Value 散落"
 
 BE-IN-15:
@@ -509,7 +509,7 @@ BE-AU-18:
   program:
     scanner: java-ast
     target: all
-    forbid_pattern: '@SaCheckPermission\\("'
+    forbid_pattern: '@SaCheckPermission\("'
   message: "硬编码权限码字符串，应使用 PermissionCodes 常量"
 
 BE-AU-21:
