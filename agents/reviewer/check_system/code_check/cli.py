@@ -18,16 +18,24 @@ from code_check.models import (
 
 def load_scan_result(json_path: Path) -> ScanResult:
     """Load a ScanResult from a JSON file."""
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return _parse_scan_result(data)
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return _parse_scan_result(data)
+    except (KeyError, TypeError, json.JSONDecodeError) as e:
+        print(f"Error: Failed to parse scan result '{json_path}': {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def load_review_result(json_path: Path) -> ReviewResult:
     """Load a ReviewResult from a JSON file."""
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return _parse_review_result(data)
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return _parse_review_result(data)
+    except (KeyError, TypeError, json.JSONDecodeError) as e:
+        print(f"Error: Failed to parse review result '{json_path}': {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _parse_scan_result(data: dict) -> ScanResult:
@@ -96,7 +104,7 @@ def cmd_scan(args):
     if isinstance(strategy, str):
         strategy = BlockingStrategy(strategy)
     output_dir = Path(args.output_dir or config["output_dir"])
-    output_format = args.format or config["format"]
+    output_format = args.format or config["format"] or "json"
     config["strategy"] = strategy
     rules_dir = Path(rules_dir)
 

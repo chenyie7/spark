@@ -64,6 +64,13 @@ def _any_match(items: list[str], pattern: str) -> bool:
 
 
 
+def _safe_fullmatch(pattern: str, text: str) -> bool:
+    """Like re.fullmatch, but returns False on invalid regex instead of raising."""
+    try:
+        return bool(re.fullmatch(pattern, text))
+    except re.error:
+        return False
+
 def _matches_on_dir(file_path: Path, on_dir: str) -> bool:
     """Check if *file_path*'s parent directory components match *on_dir*.
 
@@ -84,7 +91,7 @@ def _matches_on_dir(file_path: Path, on_dir: str) -> bool:
             if "*" in pat or "?" in pat:
                 if fnmatch.fnmatch(part, pat):
                     return True
-            elif re.fullmatch(pat, part):
+            elif _safe_fullmatch(pat, part):
                 return True
     return False
 
@@ -230,7 +237,7 @@ def _find_formal_parameters(method_node) -> list:
     formal_params = _child_by_type(method_node, "formal_parameters")
     if formal_params:
         return _children_by_type(formal_params, "formal_parameter")
-    return _find_formal_parameters(method_node)
+    return []
 
 
 # ── Base Scanner ───────────────────────────────────────────────
@@ -472,7 +479,10 @@ class FileNamingScanner(BaseScanner):
 
             # ── on_file_pattern filtering ──
             if "on_file_pattern" in program:
-                fp_regex = re.compile(program["on_file_pattern"])
+                try:
+                    fp_regex = re.compile(program["on_file_pattern"])
+                except re.error:
+                    continue
                 if not fp_regex.search(file_name):
                     continue
 
@@ -921,7 +931,10 @@ class JavaAstScanner(BaseScanner):
                         break
                 if ret_type_node:
                     ret_text = _node_text(ret_type_node, source_bytes)
-                    if program["required_return_pattern"] not in ret_text:
+                    pattern = program["required_return_pattern"]
+                    # Use regex with negative lookbehind to avoid substring false positives
+                    # e.g. "NonResult<Void>" should NOT match pattern "Result<"
+                    if not re.search(r'(?<![a-zA-Z])' + re.escape(pattern), ret_text):
                         findings.append(Finding(
                             code=code, level=level, line=method_line,
                             method=method_name,
@@ -1030,7 +1043,8 @@ class JavaAstScanner(BaseScanner):
                 for pn in _find_formal_parameters(method_node):
                     param_type_text = ""
                     for child in pn.children:
-                        if child.type in ("type_identifier", "generic_type"):
+                        if child.type in ("type_identifier", "generic_type", "scoped_type_identifier",
+                                           "array_type", "integral_type", "floating_point_type", "boolean_type"):
                             param_type_text = _node_text(child, source_bytes)
                             break
                     # Only check DTO-type params
@@ -1072,7 +1086,12 @@ class JavaAstScanner(BaseScanner):
             if program.get("skip_static_final") and is_static and is_final:
                 continue
 
-            type_node = _child_by_type(field_node, "type_identifier")
+            type_node = None
+            for child in field_node.children:
+                if child.type in ("type_identifier", "generic_type", "scoped_type_identifier",
+                                   "array_type", "integral_type", "floating_point_type", "boolean_type"):
+                    type_node = child
+                    break
             field_type = _node_text(type_node, source_bytes) if type_node else ""
 
             # ── Filter by field type ──
