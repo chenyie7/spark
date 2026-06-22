@@ -17,7 +17,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/dump-agent-payload.sh"
+            "command": "bash ${CLAUDE_PROJECT_DIR}/benchmarks/hooks/dump-agent-payload.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/benchmarks/hooks/synthesize-benchmark.sh"
           }
         ]
       }
