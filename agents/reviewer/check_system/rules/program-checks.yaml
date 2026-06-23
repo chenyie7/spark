@@ -69,15 +69,6 @@ BE-ST-17:
     pattern: "*Mapper.java"
   message: "不符合 Mapper 命名规范"
 
-BE-ST-18:
-  description: "Entity 类名是否以 Entity 结尾"
-  level: P2
-  program:
-    scanner: file-naming
-    on_dir: "entity"
-    pattern: "*Entity.java"
-  message: "不符合 Entity 命名规范"
-
 BE-ST-19:
   description: "DTO 命名是否为 {业务名}{动作}DTO"
   level: P2
@@ -176,27 +167,6 @@ BE-QL-15:
     require_pattern_in_body: "Result\\.success\\(\\s*\\)"
   message: "{method} 应使用 Result.success() 无 data 返回"
 
-BE-QL-16:
-  description: "分页查询是否返回 Result<PageResult<T>>"
-  level: P2
-  program:
-    scanner: java-ast
-    target: method
-    on_class_annotation: "RestController|Controller"
-    match_method_name: "page|list"
-    required_return_pattern: "PageResult<"
-  message: "{method} 分页查询应返回 Result<PageResult<T>>"
-
-BE-QL-17:
-  description: "分页 DTO 是否继承 PageQueryDTO"
-  level: P2
-  program:
-    scanner: java-ast
-    target: class
-    on_dir: "dto"
-    require_pattern: "extends\\s+\\w*PageQueryDTO|extends\\s+\\w*PageRequest"
-  message: "分页 DTO 应继承 PageQueryDTO"
-
 BE-QL-18:
   description: "成功消息是否固定为 ok"
   level: P2
@@ -257,17 +227,6 @@ BE-QL-33:
     target: all
     forbid_pattern: "@SneakyThrows|@Cleanup|@Synchronized"
   message: "使用了禁止的 Lombok 注解"
-
-BE-QL-38:
-  description: "常量类是否 final + 私有构造"
-  level: P2
-  program:
-    scanner: java-ast
-    target: class
-    on_class_annotation: ".*(Constant|Constants|Code|Codes)"
-    required_class_modifier: "final"
-    required_private_constructor: true
-  message: "常量类应声明为 final + 私有构造"
 
 BE-QL-40:
   description: "是否手动声明 Logger 字段而未用 @Slf4j"
@@ -464,15 +423,6 @@ BE-IN-31:
 # Auth Review / 认证审查
 # ═══════════════════════════════════════════════════════════════
 
-BE-AU-02:
-  description: "多端场景下是否直接使用 StpUtil 而未通过 StpKit 门面"
-  level: P1
-  program:
-    scanner: java-ast
-    target: all
-    forbid_pattern: "import\\s+cn\\.dev33\\.satoken\\.StpUtil|StpUtil\\."
-  message: "直接使用了 StpUtil，多端场景应使用 StpKit 门面"
-
 BE-AU-05:
   description: "Sa-Token 配置类是否命名为 SaTokenCustomConfig"
   level: P0
@@ -482,16 +432,6 @@ BE-AU-05:
     exclude_pattern: "SaTokenCustomConfig.java"
     must_not_match: true
   message: "配置类应命名为 SaTokenCustomConfig，避免与库类 SaTokenConfig 冲突"
-
-BE-AU-07:
-  description: "登录密码是否使用 BCryptPasswordEncoder 加密"
-  level: P0
-  program:
-    scanner: java-ast
-    target: class
-    on_class_annotation: "Service|ServiceImpl"
-    require_pattern: "BCryptPasswordEncoder"
-  message: "密码未使用 BCryptPasswordEncoder 加密"
 
 BE-AU-15:
   description: "权限注解是否放在 Controller 层而非 Service 层"

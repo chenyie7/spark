@@ -23,6 +23,12 @@ BE-ST-07:
   ai:
     prompt_hint: "检查 Service 方法的返回值类型是否为 Entity。Entity 是数据库映射对象，不应暴露到 Controller 层，应转换为 VO 后返回"
 
+BE-ST-18:
+  description: "Entity 类命名是否符合规范"
+  level: P2
+  ai:
+    prompt_hint: "检查 entity/ 目录下的实体类命名。项目规范支持两种风格：*Entity.java（如 UserEntity.java）或 Sys* 前缀（如 SysUser.java）。只要符合其中一种即可，不强制要求 Entity 后缀。检查前先读取项目的实际实体类命名模式，确认团队采用的风格。"
+
 # ═══════════════════════════════════════════════════════════════
 # 异常处理
 # ═══════════════════════════════════════════════════════════════
@@ -107,6 +113,24 @@ BE-QL-46:
   ai:
     prompt_hint: "检查 for/while 循环内是否调用了 Mapper 方法逐条查询或插入数据库。应使用批量方法（selectBatchIds、insertBatch）或一次性查询（IN 条件）替代。循环内逐条操作数据库是常见的性能瓶颈"
 
+BE-QL-16:
+  description: "分页查询是否返回 Result<PageResult<T>>"
+  level: P2
+  ai:
+    prompt_hint: "检查 Controller 中执行分页查询的方法是否返回了 Result<PageResult<T>> 格式。通过方法中是否使用 MyBatis-Plus Page<T> 或 IPage<T> 来判断该方法是否为分页查询。注意区分：方法名叫 list() 但实际返回全量列表的不是分页查询，不需要 PageResult。"
+
+BE-QL-17:
+  description: "分页查询 DTO 是否继承 PageQueryDTO"
+  level: P2
+  ai:
+    prompt_hint: "检查被 Controller 分页查询方法（page 方法）用作参数的 DTO 类是否继承了 PageQueryDTO。CreateDTO、UpdateDTO、AssignDTO 等非分页请求 DTO 不在此检查范围。只检查真正用于分页查询参数的 DTO。"
+
+BE-QL-38:
+  description: "常量类是否 final + 私有构造"
+  level: P2
+  ai:
+    prompt_hint: "检查名称为 *Constant、*Constants、*Code、*Codes 的真正常量类（只包含静态常量定义，无实例字段和业务方法）是否声明为 final 并包含私有构造方法。注意：PageQueryDTO、*QueryDTO 等分页查询 DTO 不是常量类，不应被此项检查。"
+
 # ═══════════════════════════════════════════════════════════════
 # 数据库规范
 # ═══════════════════════════════════════════════════════════════
@@ -122,3 +146,19 @@ BE-QL-20:
   level: P1
   ai:
     prompt_hint: "检查 Entity 类和建表 SQL，主键 id 应为 BIGINT（Java Long），并使用雪花ID 策略（@TableId(type = IdType.ASSIGN_ID)），不使用自增主键。自增主键在分布式环境下会产生冲突"
+
+# ═══════════════════════════════════════════════════════════════
+# 认证安全
+# ═══════════════════════════════════════════════════════════════
+
+BE-AU-07:
+  description: "登录密码是否使用 BCryptPasswordEncoder 加密"
+  level: P0
+  ai:
+    prompt_hint: "检查涉及用户密码操作的 Service 类中，密码是否通过 BCryptPasswordEncoder.encode() 加密后再存储。重点关注 AuthService 的登录/注册逻辑和 UserService 的创建用户/修改密码方法。不处理密码的 Service（如 DictService、MenuService、LogService）不需要此项检查，不应标记。"
+
+BE-AU-02:
+  description: "多端场景下是否直接使用 StpUtil 而未通过 StpKit 门面"
+  level: P1
+  ai:
+    prompt_hint: "先读取 agents/coder/auth/auth-basic.md 确认项目的 Sa-Token 使用策略。如果是纯后台管理项目（无用户端、无多系统），规范明确允许直接使用 StpUtil；如果是多端项目（如同时有 admin 端和 app 端），应使用 StpKit 门面隔离不同端的会话。根据项目实际配置和规范文档判断是否违规，不要一刀切。"

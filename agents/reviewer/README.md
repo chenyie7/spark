@@ -12,12 +12,12 @@
 │                 (review.skill.md)                    │
 ├─────────────────────────────────────────────────────┤
 │  Layer 1: 程序预检 (check_system/)                    │
-│  Python CLI · 零 AI Token · 确定性"有没有"问题         │
-│  6 种扫描器 · 39 条规则 · P0/P1 阻断                  │
+│  Python CLI · 零 AI Token · 确定性机械检查               │
+│  46 条规则 · P0/P1 阻断 · 零误报                        │
 ├─────────────────────────────────────────────────────┤
 │  Layer 2: AI 检查清单 (check_system/rules/)           │
 │  Review Agent · 语义理解 · "对不对"问题                │
-│  17 条规则 · PASS/FAIL/NA 判定                       │
+│  23 条规则 · PASS/FAIL/NA 判定                       │
 ├─────────────────────────────────────────────────────┤
 │  输出: review-output/final-review-report.md          │
 └─────────────────────────────────────────────────────┘
@@ -81,30 +81,30 @@ exclude:                  # 排除目录
 
 ## 四、规则体系
 
-### 程序检查规则（39 条，6 种扫描器）
+所有规则以 YAML 格式统一管理在 `check_system/rules/` 目录下，分为两大类：
 
-| 扫描器 | 覆盖维度 | 规则数 |
-|--------|---------|:--:|
-| `text-grep` | 行级正则匹配（日志、注入、密码等） | 24 |
-| `java-annotation` | 注解检查（校验、日志、Swagger 等） | 11 |
-| `java-return-type` | Controller 返回类型（Result<T>） | 2 |
-| `package-structure` | 包结构（标准子包、service/impl） | 2 |
-| `file-naming` | 文件命名（Controller/Service/Mapper 等） | 8 |
-| `config-check` | 配置文件（明文密码、knife4j 等） | 3 |
+### 程序检查规则（Scanner — 零误报、纯机械匹配）
 
-> 规则定义：`check_system/rules/program-checks.yaml`
+程序检查只包含「100% 确定」的机械性规则，报出来的就是问题，不会有误报。
 
-### AI 检查清单（17 条，4 个维度）
+> Scanner 规则：`check_system/rules/program-checks.yaml`（46 条）
 
-| 维度 | 规则数 |
-|------|:--:|
-| 分层架构 | 3 |
-| 异常处理 | 5 |
-| 日志质量 | 2 |
-| 代码质量 | 5 |
-| 数据库规范 | 2 |
+> Scanner 阻断级别：P0（安全/崩溃/数据错误）、P1（违反核心规范）
 
-> 规则定义：`check_system/rules/ai-checklist.yaml`
+### AI 语义检查清单（AI — 需要理解代码意图和上下文）
+
+AI 检查覆盖程序判断不了的语义问题，能理解「这个 Service 是否真的在处理密码」「这个场景该用 StpUtil 还是 StpKit」等语境。
+
+> AI 规则：`check_system/rules/ai-checklist.yaml`（23 条）
+
+> AI 检查指令模板：`check_system/rules/review-prompt.md`
+
+| 维度 | Scanner 规则数 | AI 规则数 |
+|------|:--:|:--:|
+| 结构审查 (BE-ST) | 10 | 4 |
+| 质量审查 (BE-QL) | 17 | 13 |
+| 基础设施 (BE-IN) | 13 | 0 |
+| 认证安全 (BE-AU) | 6 | 2 |
 
 ### 严重级别
 
@@ -125,27 +125,21 @@ reviewer/
 ├── check_system/                # 双层校验系统
 │   ├── code_check/              # Python 包
 │   │   ├── cli.py               # CLI 入口（scan + report）
-│   │   ├── scanner.py           # 6 种扫描器引擎
+│   │   ├── scanner.py           # Scanner 引擎（AST + 结构 + 命名 + 配置）
 │   │   ├── config.py            # 配置加载器
 │   │   ├── models.py            # 数据模型
 │   │   └── reporter.py          # 报告生成器（Markdown）
-│   ├── rules/                   # 检查规则
-│   │   ├── program-checks.yaml  # 程序检查规则（39 条）
-│   │   ├── ai-checklist.yaml    # AI 检查清单（17 条）
+│   ├── rules/                   # 检查规则（纯 YAML 格式）
+│   │   ├── program-checks.yaml  # Scanner 规则（46 条 — 零误报机械检查）
+│   │   ├── ai-checklist.yaml    # AI 检查清单（23 条 — 语义理解）
 │   │   └── review-prompt.md     # AI 审查指令模板
-│   ├── tests/                   # 126 个测试
+│   ├── tests/                   # 测试
 │   └── code-check-config.yaml  # CLI 配置文件
-├── hooks/                       # Git Hook 脚本
+├── hooks/                       # Shell Hook 脚本
 │   ├── settings.template.json   # Hook 配置模板（/review:on 使用）
 │   ├── review-pre-hook.sh       # 程序预检脚本
 │   └── review-post-hook.sh      # 报告合并脚本
-├── structure-check.md           # [参考] 结构审查规范原文
-├── quality-check.md             # [参考] 质量审查规范原文
-├── auth-check.md                # [参考] 认证审查规范原文
-└── infra-check.md               # [参考] 基础设施审查规范原文
 ```
-
-> `*check.md` 文件为原始规范文档，规范内容已编码到 `check_system/rules/` 中。保留作为参考，备份分支：`backup/original-reviewer-files`。
 
 ---
 

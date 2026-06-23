@@ -79,10 +79,10 @@
     }
   ],
   "summary": {
-    "total": 15,
-    "pass": 13,
+    "total": 23,
+    "pass": 20,
     "fail": 2,
-    "na": 0
+    "na": 1
   }
 }
 ```
