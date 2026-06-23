@@ -147,10 +147,6 @@ def cmd_scan(args):
 
 def cmd_report(args):
     """Generate final Markdown report."""
-    # Load config if provided (for future config-driven report options)
-    if args.config:
-        config = load_cli_config(Path(args.config))
-
     pre_path = Path(args.pre)
     if not pre_path.exists():
         print(f"Error: pre-check result not found: {pre_path}", file=sys.stderr)

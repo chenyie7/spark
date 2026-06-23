@@ -13,7 +13,7 @@ import string as _string_
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import tree_sitter
 import tree_sitter_java as tsjava
@@ -29,6 +29,10 @@ from code_check.models import (
     ScanScope,
     ScanSummary,
 )
+
+# ── Constants ────────────────────────────────────────────────────
+
+STANDARD_PACKAGE_DIRS = {"controller", "service", "mapper", "entity", "dto", "vo"}
 
 
 # ── Helpers ────────────────────────────────────────────────────
@@ -125,7 +129,7 @@ def _node_text(node, source: bytes) -> str:
     return source[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
 
 
-def _child_by_type(node, type_name: str):
+def _child_by_type(node, type_name: str) -> tree_sitter.Node | None:
     """Return the first immediate child of *node* with the given type name."""
     for child in node.children:
         if child.type == type_name:
@@ -133,7 +137,7 @@ def _child_by_type(node, type_name: str):
     return None
 
 
-def _children_by_type(node, type_name: str) -> list:
+def _children_by_type(node, type_name: str) -> list[tree_sitter.Node]:
     """Return all immediate children of *node* with the given type name."""
     return [child for child in node.children if child.type == type_name]
 
@@ -156,7 +160,7 @@ def _has_modifier(node, modifier: str) -> bool:
     return any(child.type == modifier for child in mods.children)
 
 
-def _class_modifiers(class_node) -> set:
+def _class_modifiers(class_node) -> set[str]:
     """Return the set of modifier keywords on a class/interface declaration."""
     mods = _child_by_type(class_node, "modifiers")
     if mods is None:
@@ -206,7 +210,7 @@ def _get_class_interface_body(node):
     return None
 
 
-def _find_ast_methods(root_node):
+def _find_ast_methods(root_node) -> Iterator[tuple[tree_sitter.Node, str, set[str]]]:
     """Yield all method_declaration and constructor_declaration nodes
     with (method_node, containing_class_type, class_modifiers_set).
     """
@@ -220,7 +224,7 @@ def _find_ast_methods(root_node):
                     yield member, child.type, _class_modifiers(child)
 
 
-def _find_ast_fields(root_node):
+def _find_ast_fields(root_node) -> Iterator[tuple[tree_sitter.Node, str, set[str]]]:
     """Yield all field_declaration nodes with (field_node, containing_class_type, class_modifiers_set)."""
     for child in root_node.children:
         if child.type in ("class_declaration", "interface_declaration", "enum_declaration"):
@@ -232,7 +236,7 @@ def _find_ast_fields(root_node):
                     yield member, child.type, _class_modifiers(child)
 
 
-def _find_formal_parameters(method_node) -> list:
+def _find_formal_parameters(method_node) -> list[tree_sitter.Node]:
     """Return all formal_parameter nodes for a method, handling nested structure."""
     formal_params = _child_by_type(method_node, "formal_parameters")
     if formal_params:
@@ -405,9 +409,16 @@ class PackageStructureScanner(BaseScanner):
         are excluded.
         """
         candidates: list[Path] = []
-        std_names = {"controller", "service", "mapper", "entity", "dto", "vo"}
+        base_depth = len(base_path.parts)
 
         for root, dirs, files in os.walk(base_path):
+            # Limit depth to base_depth + 5 to avoid misclassifying
+            # deeply nested non-Java directories as package roots.
+            current_depth = len(Path(root).parts)
+            if current_depth > base_depth + 5:
+                dirs[:] = []
+                continue
+
             dirs[:] = [
                 d
                 for d in dirs
@@ -420,13 +431,13 @@ class PackageStructureScanner(BaseScanner):
 
             # A package root has standard subdirs, OR has Java files
             # but is NOT inside a standard subdir itself
-            if child_dir_names & std_names:
+            if child_dir_names & STANDARD_PACKAGE_DIRS:
                 candidates.append(root_path)
             elif has_java:
                 # Only include if the parent directory is not a standard
                 # package subdir (e.g. don't include controller/ itself)
                 parent_name = root_path.parent.name
-                if parent_name not in std_names:
+                if parent_name not in STANDARD_PACKAGE_DIRS:
                     candidates.append(root_path)
 
         # Deduplicate: keep only topmost directories (remove children)
@@ -504,13 +515,12 @@ class FileNamingScanner(BaseScanner):
                     for d in parent.iterdir()
                     if d.is_dir() and not d.name.startswith(".")
                 ]
-                std_names = {"controller", "service", "mapper", "entity", "dto", "vo"}
-                has_std_siblings = any(d.name in std_names for d in sibling_dirs)
+                has_std_siblings = any(d.name in STANDARD_PACKAGE_DIRS for d in sibling_dirs)
 
                 if not has_std_siblings:
                     # Check if parent itself IS a standard subdir (e.g. controller/)
                     # — then the file is in a sub-package, not root
-                    if parent.name in std_names:
+                    if parent.name in STANDARD_PACKAGE_DIRS:
                         findings.append(
                             Finding(
                                 code=code,
@@ -1233,7 +1243,7 @@ def _path_matches_glob(path: str, pattern: str) -> bool:
     if "**" not in pattern:
         return fnmatch.fnmatch(path, pattern)
 
-    path_parts = path.split("/")
+    path_parts = path.replace(os.sep, "/").split("/")
     pat_parts = pattern.split("/")
 
     def _match(pp: list[str], pat: list[str]) -> bool:
@@ -1271,7 +1281,9 @@ def classify_files(file_names: list[str]) -> dict[str, int]:
             counts["mapper"] = counts.get("mapper", 0) + 1
         elif name.endswith("Entity.java"):
             counts["entity"] = counts.get("entity", 0) + 1
-        elif name.endswith("DTO.java") or name.endswith("VO.java"):
+        elif name.endswith("DTO.java") or name.endswith("VO.java") or \
+             name.endswith("Request.java") or name.endswith("Command.java") or \
+             name.endswith("Form.java"):
             counts["dto"] = counts.get("dto", 0) + 1
     return counts
 
