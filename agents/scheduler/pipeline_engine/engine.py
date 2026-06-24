@@ -329,15 +329,21 @@ class PipelineEngine:
             "review_context": review_context,
             "round": str(self.state.round),
             "max_retries": str(self.config.defaults.max_retries),
+            "run_id": self.state.run_id,
         }
 
         try:
             return node.prompt_template.format(**variables)
-        except KeyError as e:
+        except KeyError:
+            # 对存在未知变量的模板做部分替换（如 {coder_output} 来自上游节点输出）
+            import re
+            result = node.prompt_template
+            for key, value in variables.items():
+                result = result.replace("{" + key + "}", str(value))
             import sys
-            print(f"警告: 节点 '{node.id}' 的 prompt_template 中存在未知变量 {e}",
+            print(f"警告: 节点 '{node.id}' 的 prompt_template 中存在引擎未识别的变量",
                   file=sys.stderr)
-            return node.prompt_template
+            return result
 
     def _determine_phase(self, node) -> str:
         """确定节点的执行阶段标签。"""

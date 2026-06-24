@@ -157,6 +157,22 @@ class TestPipelineEngineNext:
         assert "成功" not in action.message
 
 
+    def test_prompt_contains_run_id(self, sample_pipeline_path: Path, state_path: Path):
+        """reviewer prompt should include run_id from state."""
+        config = load_pipeline(sample_pipeline_path)
+        engine = PipelineEngine(config, state_path)
+        engine.start("test")
+        # Manually set run_id on state (simulating what CLI start does)
+        engine._ensure_state()
+        engine.state.run_id = "20260624103000-001"
+        engine._save_state()
+        engine.next()  # coder
+        engine.report("coder", NodeStatus.SUCCESS, "ok")
+        action = engine.next()  # reviewer
+        assert action.nodes[0].node_id == "reviewer"
+        assert "20260624103000-001" in action.nodes[0].prompt
+
+
 class TestPipelineEngineReport:
     def test_report_with_verdict(self, sample_pipeline_path: Path, state_path: Path):
         config = load_pipeline(sample_pipeline_path)
