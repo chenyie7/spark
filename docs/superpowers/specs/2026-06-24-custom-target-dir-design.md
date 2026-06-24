@@ -1,111 +1,111 @@
-# Custom Target Directory for /build Pipeline
+# /build 自定义代码输出目录
 
-> **Status:** Approved | **Date:** 2026-06-24
+> **状态:** 已确认 | **日期:** 2026-06-24
 
-## Goal
+## 目标
 
-Allow users to specify a custom module root directory when running `/build`, so the coder agent generates code under `<target-dir>/src/main/java/` instead of always using the project root. This enables multi-module code generation within a single repository.
+允许用户在运行 `/build` 时指定自定义模块根目录，coder agent 将代码生成在 `<target-dir>/src/main/java/` 下，而非始终使用项目根目录。这使得在单一仓库中进行多模块代码生成成为可能。
 
-## Motivation
+## 背景
 
-Currently `pipeline.yaml` hardcodes `src/main/java` as the coder output path. Every `/build` run writes to the same location. Users who want to generate code for a separate module (e.g., `admin-test/`, `modules/user-svc/`) have no mechanism to redirect output — the pipeline always targets the project root.
+当前 `pipeline.yaml` 将 `src/main/java` 硬编码为 coder 的输出路径。每次 `/build` 运行都写入同一位置。用户如果想要为独立模块（如 `admin-test/`、`modules/user-svc/`）生成代码，无法重定向输出——流水线始终以项目根目录为目标。
 
-## Design
+## 设计
 
-### Concept
+### 概念模型
 
-`--target-dir` specifies the **module root directory**. The coder generates Java code under `<target-dir>/src/main/java/` following standard Maven structure.
+`--target-dir` 指定的是**模块根目录**。coder 按照 Maven 标准结构，在 `<target-dir>/src/main/java/` 下生成 Java 代码。
 
 ```
-Default (".")          → ./src/main/java/
+默认值（"."）           → ./src/main/java/
 admin-test             → ./admin-test/src/main/java/
 modules/user-svc       → ./modules/user-svc/src/main/java/
 ```
 
-### Data Flow
+### 数据流
 
 ```
 /build 实现登录 --target-dir admin-test
   │
   ▼
 build.skill.md Phase 0
-  │  parse --target-dir, prompt if missing
+  │  解析 --target-dir 参数，缺失则交互询问
   ▼
 pipeline_engine.cli start --target-dir admin-test
   │  → PipelineState.target_dir = "admin-test"
   ▼
 pipeline_engine.cli next
-  │  → _render_prompt substitutes {target_dir}
+  │  → _render_prompt 替换模板变量 {target_dir}
   ▼
-coder prompt:
+coder 的 prompt:
   "将生成的 Java 代码写入 admin-test/src/main/java 对应包路径下"
   ▼
-pipeline_engine.cli next (reviewer)
-  │  → reviewer prompt receives {target_dir}
+pipeline_engine.cli next（reviewer）
+  │  → reviewer prompt 接收 {target_dir}
   ▼
-reviewer prompt:
+reviewer 的 prompt:
   "审查 admin-test/src/main/java 目录"
 ```
 
-### Interaction Flow
+### 交互流程
 
 ```
 /build 实现登录 --target-dir admin-test
-  → uses admin-test directly, no prompt
+  → 直接使用 admin-test，不询问
 
 /build 实现登录
   → "是否需要自定义代码输出目录？（当前默认: 项目根目录 src/main/java）
      输入模块目录名或直接回车跳过："
-     ├─ admin-test      → uses admin-test
-     ├─ modules/user    → uses modules/user
-     └─ <回车>/否/不    → uses "." (default)
+     ├─ admin-test      → 使用 admin-test
+     ├─ modules/user    → 使用 modules/user
+     └─ <回车>/否/不    → 使用默认值 "."
 ```
 
-### Template Variables
+### 模板变量
 
-New variable available in `pipeline.yaml` prompt templates:
+`pipeline.yaml` prompt 模板中新增的变量：
 
-| Variable | Source | Example |
-|----------|--------|---------|
+| 变量 | 来源 | 示例 |
+|------|------|------|
 | `{target_dir}` | `PipelineState.target_dir` | `"admin-test"` |
 
-Existing variables unchanged: `{requirement}`, `{review_context}`, `{round}`, `{max_retries}`, `{run_id}`.
+已有变量不变：`{requirement}`、`{review_context}`、`{round}`、`{max_retries}`、`{run_id}`。
 
-## Changes
+## 变更清单
 
-### 1. `PipelineState` — new field
+### 1. `PipelineState` — 新增字段
 
-**File:** `agents/scheduler/pipeline_engine/models.py`
+**文件:** `agents/scheduler/pipeline_engine/models.py`
 
 ```python
 @dataclass
 class PipelineState:
-    # ... existing fields ...
-    target_dir: str = "."   # NEW: 模块根目录，相对于项目根
+    # ... 已有字段 ...
+    target_dir: str = "."   # 新增：模块根目录，相对于项目根
 ```
 
-`from_dict()` / `to_dict()` updated accordingly.
+同步更新 `from_dict()` / `to_dict()`。
 
-### 2. CLI `start` — new `--target-dir` argument
+### 2. CLI `start` — 新增 `--target-dir` 参数
 
-**File:** `agents/scheduler/pipeline_engine/cli.py`
+**文件:** `agents/scheduler/pipeline_engine/cli.py`
 
 ```python
 p_start.add_argument("--target-dir", default=".",
                      help="模块根目录（相对于项目根）")
 ```
 
-In `cmd_start()`:
+`cmd_start()` 中：
 
 ```python
 state = engine.start(args.requirement)
-state.target_dir = args.target_dir  # after engine.start() sets default
+state.target_dir = args.target_dir  # engine.start() 设置默认值后覆盖
 engine._save_state()
 ```
 
-### 3. Engine `_render_prompt` — add `{target_dir}`
+### 3. Engine `_render_prompt` — 新增 `{target_dir}` 变量
 
-**File:** `agents/scheduler/pipeline_engine/engine.py`
+**文件:** `agents/scheduler/pipeline_engine/engine.py`
 
 ```python
 variables = {
@@ -114,15 +114,15 @@ variables = {
     "round": str(self.state.round),
     "max_retries": str(self.config.defaults.max_retries),
     "run_id": self.state.run_id,
-    "target_dir": self.state.target_dir,    # NEW
+    "target_dir": self.state.target_dir,    # 新增
 }
 ```
 
-### 4. `pipeline.yaml` — replace hardcoded path
+### 4. `pipeline.yaml` — 替换硬编码路径
 
-**File:** `agents/scheduler/pipeline.yaml`
+**文件:** `agents/scheduler/pipeline.yaml`
 
-Coder prompt_template — 三处 `src/main/java` 替换为 `{target_dir}/src/main/java`:
+Coder prompt_template — 三处 `src/main/java` 替换为 `{target_dir}/src/main/java`：
 
 ```diff
 - ⚠️ 边界约束：你只能修改 src/main/java/ 目录下的 Java 文件和项目根目录的 pom.xml（如需添加依赖）。
@@ -133,45 +133,45 @@ Coder prompt_template — 三处 `src/main/java` 替换为 `{target_dir}/src/mai
 + 将生成的 Java 代码写入 {target_dir}/src/main/java 对应包路径下。
 ```
 
-Reviewer prompt_template step 1:
+Reviewer prompt_template 步骤 1：
 ```diff
 - 1. 调用 Skill 工具执行 review：使用 skill="review", args="src/main/java"
 + 1. 调用 Skill 工具执行 review：使用 skill="review", args="{target_dir}/src/main/java"
 ```
 
-### 5. `build.skill.md` — Phase 0 interaction
+### 5. `build.skill.md` — Phase 0 交互
 
-**File:** `agents/scheduler/build.skill.md`
+**文件:** `agents/scheduler/build.skill.md`
 
-Phase 0 updated to:
-1. Parse `--target-dir` from user input
-2. If absent, ask user once
-3. Pass to `pipeline_engine.cli start --target-dir <value>`
+Phase 0 更新为：
+1. 从用户输入解析 `--target-dir`
+2. 缺失时交互询问一次
+3. 传入 `pipeline_engine.cli start --target-dir <值>`
 
-## Test Plan
+## 测试计划
 
-### Unit tests (`test_models.py`)
-- `target_dir` defaults to `"."` in new `PipelineState`
-- `from_dict` / `to_dict` roundtrip preserves `target_dir`
-- `from_dict` with missing `target_dir` falls back to `"."`
+### 模型单元测试（`test_models.py`）
+- 新建 `PipelineState` 时 `target_dir` 默认值为 `"."`
+- `from_dict` / `to_dict` 往返保持 `target_dir` 不变
+- `from_dict` 缺少 `target_dir` 时回退为 `"."`
 
-### Unit tests (`test_engine.py`)
-- `_render_prompt` substitutes `{target_dir}` in coder prompt
-- `_render_prompt` substitutes `{target_dir}` in reviewer prompt
-- `{target_dir}` present in coder prompt with custom value
-- `{target_dir}` present in reviewer prompt with custom value
+### 引擎单元测试（`test_engine.py`）
+- `_render_prompt` 在 coder prompt 中替换 `{target_dir}`
+- `_render_prompt` 在 reviewer prompt 中替换 `{target_dir}`
+- coder prompt 中包含自定义 `target_dir` 的值
+- reviewer prompt 中包含自定义 `target_dir` 的值
 
-### CLI tests (`test_cli.py`)
-- `start --target-dir admin-test` stores value in state file
-- `start` without `--target-dir` defaults to `"."`
-- `next` returns prompt containing custom `target_dir`
+### CLI 测试（`test_cli.py`）
+- `start --target-dir admin-test` 将值写入状态文件
+- `start` 不传 `--target-dir` 时默认为 `"."`
+- `next` 返回的 prompt 中包含自定义 `target_dir`
 
-### Integration tests
-- End-to-end: `/build 简单需求 --target-dir test-output` verifies files land in `test-output/src/main/java/`
-- End-to-end: `/build 简单需求` (no flag) verifies interactive prompt works
+### 集成测试
+- 端到端：`/build 简单需求 --target-dir test-output` 验证文件生成在 `test-output/src/main/java/`
+- 端到端：`/build 简单需求`（无参数）验证交互询问正常
 
-## Non-Goals
+## 非目标
 
-- Creating the target directory — coder agent creates directories as needed
-- Validating the target directory exists before start — invalid directories fail naturally at generation time
-- Persisting target_dir across `/build` runs — this is per-run only
+- 不自动创建目标目录——coder agent 按需创建
+- 不预先校验目标目录是否存在——无效目录在生成时自然失败
+- 不在多次 `/build` 运行间持久化 `target_dir`——每次运行独立设置
