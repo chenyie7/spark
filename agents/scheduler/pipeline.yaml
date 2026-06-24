@@ -47,6 +47,7 @@ nodes:
     outputs:
       - target_dir: "src/main/java"
     timeout: 900s
+    depends_on: []          # 起始节点，无依赖
 
   - id: reviewer
     type: agent
@@ -71,6 +72,7 @@ nodes:
       - ai_review: "review-output/review-result.json"
       - final_report: "review-output/final-review-report.md"
     timeout: 600s
+    depends_on: [coder]     # 依赖 coder 产出
 
 # ── DAG 边 ──
 # 调度 Agent 按以下规则决定流转：
