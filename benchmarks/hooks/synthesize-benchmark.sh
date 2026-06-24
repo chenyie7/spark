@@ -50,7 +50,23 @@ if [ ! -f "$JSONL_PATH" ]; then
 fi
 
 # ── 配置 ──
-REVIEW_DIR="$PROJECT_DIR/agents/reviewer/check_system/review-output"
+# ── 从 code-check-config.yaml 读取 output_dir ──
+CHECK_SYSTEM_DIR="$PROJECT_DIR/agents/reviewer/check_system"
+CONFIG_YAML="$CHECK_SYSTEM_DIR/code-check-config.yaml"
+REVIEW_DIR="$PROJECT_DIR/review-output"  # 默认值
+
+if [ -f "$CONFIG_YAML" ]; then
+    OUTPUT_DIR_REL=$(python3 -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f)
+    print(c.get('output_dir', '../../../review-output'))
+except Exception:
+    print('../../../review-output')
+" "$CONFIG_YAML" 2>/dev/null)
+    REVIEW_DIR="$(cd "$CHECK_SYSTEM_DIR/$OUTPUT_DIR_REL" 2>/dev/null && pwd || echo "$PROJECT_DIR/review-output")"
+fi
 MAX_RETRIES=3
 BLOCK_STRATEGY="strict"
 

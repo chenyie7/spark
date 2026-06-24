@@ -98,7 +98,25 @@ echo "$RECORD" >> "$DUMP_FILE"
 DESC=$(echo "$RECORD" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('description',''))" 2>/dev/null)
 
 if echo "$DESC" | grep -qiE 'review|审查'; then
-    REVIEW_DIR="$PROJECT_DIR/agents/reviewer/check_system/review-output"
+    # 从 code-check-config.yaml 读取 output_dir，定位 reviewer 产物
+    CHECK_SYSTEM_DIR="$PROJECT_DIR/agents/reviewer/check_system"
+    CONFIG_YAML="$CHECK_SYSTEM_DIR/code-check-config.yaml"
+
+    if [ -f "$CONFIG_YAML" ]; then
+        OUTPUT_DIR_REL=$(python3 -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f)
+    print(c.get('output_dir', '../../../review-output'))
+except Exception:
+    print('../../../review-output')
+" "$CONFIG_YAML" 2>/dev/null)
+        REVIEW_DIR="$(cd "$CHECK_SYSTEM_DIR/$OUTPUT_DIR_REL" 2>/dev/null && pwd || echo "$PROJECT_DIR/review-output")"
+    else
+        REVIEW_DIR="$PROJECT_DIR/review-output"
+    fi
+
     if [ -d "$REVIEW_DIR" ]; then
         # 已有 rN- 文件数量 = 本轮轮次号
         N=$(find "$REVIEW_DIR" -maxdepth 1 -name "r*-pre-check-result.json" 2>/dev/null | wc -l | tr -d ' ')

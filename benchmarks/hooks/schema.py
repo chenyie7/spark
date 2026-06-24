@@ -654,7 +654,7 @@ if __name__ == "__main__":
 
     sid = sys.argv[1]
     jpath = sys.argv[2]
-    rdir = sys.argv[3] if len(sys.argv) > 3 else "agents/reviewer/check_system/review-output"
+    rdir = sys.argv[3] if len(sys.argv) > 3 else "review-output"
     pdir = sys.argv[4] if len(sys.argv) > 4 else os.getcwd()
     req = sys.argv[5] if len(sys.argv) > 5 else ""
     mr = int(sys.argv[6]) if len(sys.argv) > 6 else 3

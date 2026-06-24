@@ -48,7 +48,16 @@ if [ $EXIT_CODE -ne 0 ]; then
     echo "============================================"
     echo " Pre-hook: 阻断"
     echo " 程序预检未通过，请修复后再继续。"
-    echo " 详细报告: $PROJECT_DIR/review-output/pre-check-report.md"
+    OUTPUT_DIR_REL=$(python3 -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f)
+    print(c.get('output_dir', '../../../review-output'))
+except Exception:
+    print('../../../review-output')
+" "$CHECK_SYSTEM_DIR/code-check-config.yaml" 2>/dev/null || echo "../../../review-output")
+    echo " 详细报告: $CHECK_SYSTEM_DIR/$OUTPUT_DIR_REL/pre-check-report.md"
     echo "============================================"
     exit 1
 fi
