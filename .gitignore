@@ -12,3 +12,4 @@ src/
 benchmarks/dumps/
 benchmarks/run-*
 pom.xml
+target/

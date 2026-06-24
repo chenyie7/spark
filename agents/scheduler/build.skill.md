@@ -5,7 +5,8 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
 
 # /build — 自动化代码生成流水线
 
-用法：`/build <需求描述>`
+用法：`/build <需求描述> [--target-dir <目录>]`
+续接：`/build --continue`
 
 通过 `pipeline_engine` CLI 解析 `pipeline.yaml` 中的 DAG 定义，步进执行。
 
@@ -15,10 +16,10 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
 
 ### Phase 0: 初始化
 
-1. 检测 `review-output/pipeline-state.json` 是否存在：
-   - 存在 → 调用 `python3 -m pipeline_engine.cli status --state-file review-output/pipeline-state.json`，询问用户「检测到未完成的流水线，是否续接？」
-   - 续接 → 直接进入 Phase 1 循环
-   - 重新开始 → `python3 -m pipeline_engine.cli reset --state-file review-output/pipeline-state.json`，然后继续初始化
+1. 如果用户使用了 `--continue`：
+   - 检测 `review-output/pipeline-state.json` 是否存在
+   - 存在 → 直接进入 Phase 1 循环
+   - 不存在 → 提示「没有可续接的流水线，请使用 /build <需求> 开始新的构建」
 2. 解析用户输入中的 `--target-dir` 参数：
    - 如果用户指定了 `--target-dir <值>`，直接使用该值
    - 如果未指定，询问用户一次：
@@ -84,6 +85,6 @@ loop:
 | 需求模糊 | 追问 1-2 个澄清问题 |
 | 调度器命令失败 | 检查 python3 和 PyYAML 是否可用，展示 stderr |
 | `next` 返回 error | 展示 message，询问是否 reset 重来 |
-| 用户 Ctrl+C | 状态文件保留，下次运行可续接 |
+| 用户 Ctrl+C | 状态文件保留，使用 `/build --continue` 续接 |
 | 子 Agent 超时 | report status=error，让调度器决定下一步 |
 | 子 Agent 未生成文件 | report status=failed（非 error），进入修复循环 |
