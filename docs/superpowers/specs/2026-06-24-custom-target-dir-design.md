@@ -210,6 +210,58 @@ Phase 0 更新为：
 + OUTPUT_MD="${3:-$PROJECT_DIR/$OUTPUT_DIR/final-review-report.md}"
 ```
 
+### 9. `build.skill.md` — 终止条件路径加入 `{run_id}`
+
+**文件:** `agents/scheduler/build.skill.md`
+
+```diff
+- `next` 返回 `action=="done"` → 读取 `review-output/final-review-report.md` 展示结果
++ `next` 返回 `action=="done"` → 读取 `review-output/{run_id}/final-review-report.md` 展示结果
+```
+
+### 10. `review.skill.md` — 产物路径加入 `{run_id}` 子目录
+
+**文件:** `agents/reviewer/review.skill.md`
+
+所有 `../../../review-output/` 引用改为 `../../../review-output/{run_id}/`。skill 文件由 reviewer agent 执行，agent 从 pipeline prompt 中获取 `{run_id}`，自行替换路径。
+
+关键变更：
+
+```diff
+- `exit 0`：预检通过，`../../../review-output/pre-check-result.json` 已生成
++ `exit 0`：预检通过，`../../../review-output/{run_id}/pre-check-result.json` 已生成
+
+- `exit 1`：预检未通过，`../../../review-output/pre-check-result.json` + `../../../review-output/pre-check-report.md` 已生成
++ `exit 1`：预检未通过，`../../../review-output/{run_id}/pre-check-result.json` + `../../../review-output/{run_id}/pre-check-report.md` 已生成
+
+- 产物输出到项目根目录的 `review-output/`，从当前工作目录的引用路径为 `../../../review-output/`。
++ 产物输出到项目根目录的 `review-output/{run_id}/`，从当前工作目录的引用路径为 `../../../review-output/{run_id}/`。
+
+- `../../../review-output/pre-check-result.json` — 程序预检的线索和上下文
++ `../../../review-output/{run_id}/pre-check-result.json` — 程序预检的线索和上下文
+
+- 输出：`../../../review-output/review-result.json`
++ 输出：`../../../review-output/{run_id}/review-result.json`
+
+- 将生成的 `../../../review-output/final-review-report.md` 内容展示给用户。
++ 将生成的 `../../../review-output/{run_id}/final-review-report.md` 内容展示给用户。
+```
+
+### 11. `review-prompt.md` — AI 检查清单路径加入 `{run_id}`
+
+**文件:** `agents/reviewer/check_system/rules/review-prompt.md`
+
+```diff
+- 你已经拿到了程序预检的结果（`review-output/pre-check-result.json`）
++ 你已经拿到了程序预检的结果（`review-output/{run_id}/pre-check-result.json`）
+
+- 2. **程序预检报告：** `review-output/pre-check-result.json`（含 hints_for_ai 线索）
++ 2. **程序预检报告：** `review-output/{run_id}/pre-check-result.json`（含 hints_for_ai 线索）
+
+- 将所有检查结果汇总，输出到 **`review-output/review-result.json`**
++ 将所有检查结果汇总，输出到 **`review-output/{run_id}/review-result.json`**
+```
+
 ## 测试计划
 
 ### 模型单元测试（`test_models.py`）
