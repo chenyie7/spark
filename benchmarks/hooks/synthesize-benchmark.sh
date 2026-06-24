@@ -68,6 +68,20 @@ except Exception:
 " "$PIPELINE_YAML" 2>/dev/null || echo 3)
 fi
 
+# ── 尝试从 code-check-config.yaml 读取 strategy ──
+CONFIG_YAML="$PROJECT_DIR/agents/reviewer/check_system/code-check-config.yaml"
+if [ -f "$CONFIG_YAML" ]; then
+    BLOCK_STRATEGY=$(python3 -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f)
+    print(c.get('strategy', 'strict'))
+except Exception:
+    print('strict')
+" "$CONFIG_YAML" 2>/dev/null || echo "strict")
+fi
+
 # ── 调用合成引擎 ──
 SCHEMA_SCRIPT="$PROJECT_DIR/benchmarks/hooks/schema.py"
 
@@ -81,6 +95,7 @@ python3 "$SCHEMA_SCRIPT" \
     "$REVIEW_DIR" \
     "$PROJECT_DIR" \
     "" \
-    "$MAX_RETRIES"
+    "$MAX_RETRIES" \
+    "$BLOCK_STRATEGY"
 
 exit 0

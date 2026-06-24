@@ -86,6 +86,10 @@ def _infer_rounds(records: list[dict]) -> list[dict]:
     current_entry = {"round": current_round, "coder": None, "reviewer": None}
 
     for rec in records:
+        # 跳过开发子 Agent（subagent-driven-development 的任务 Agent）
+        if rec.get("is_dev_agent"):
+            continue
+
         desc = rec.get("description", "")
         is_reviewer = bool(REVIEW_PATTERNS.search(desc))
         role = "reviewer" if is_reviewer else "coder"
@@ -184,7 +188,7 @@ def _extract_issues(review_dir: str, round_num: int) -> dict:
 
 # ── 汇总 ──
 
-def _compute_summary(rounds: list[dict], convergence: dict) -> dict:
+def _compute_summary(rounds: list[dict], convergence: dict, records: list[dict] | None = None) -> dict:
     total_duration = 0
     total_tokens = 0
     total_tools = 0
@@ -225,7 +229,18 @@ def _compute_summary(rounds: list[dict], convergence: dict) -> dict:
                 reviewer_duration += dur
                 reviewer_calls += 1
 
-    cache_ratio = (total_cache_read / total_input) if total_input > 0 else 0.0
+    total_cache_base = total_cache_read + total_input
+    cache_ratio = (total_cache_read / total_cache_base) if total_cache_base > 0 else 0.0
+
+    # 模型使用统计
+    models_used = {}
+    if records:
+        for rec in records:
+            if rec.get("is_dev_agent"):
+                continue  # 只统计 pipeline agent 的模型
+            model = rec.get("model", "")
+            if model:
+                models_used[model] = models_used.get(model, 0) + 1
 
     return {
         "total_duration_ms": total_duration,
@@ -247,6 +262,7 @@ def _compute_summary(rounds: list[dict], convergence: dict) -> dict:
             "cache_hit_ratio": round(cache_ratio, 4),
         },
         "converged": convergence["rounds_to_converge"] is not None,
+        "models_used": models_used,
     }
 
 
@@ -283,6 +299,100 @@ def _compute_convergence(rounds: list[dict], max_retries: int) -> dict:
         "termination_reason": termination_reason,
         "series": series,
     }
+
+
+# ── 修复效率 ──
+
+def _compute_fix_efficiency(rounds: list[dict]) -> dict:
+    """计算修复效率指标。
+
+    Returns:
+        {
+            "tokens_per_p0_fixed": float | None,
+            "p0_reduction_rate_pct": float | None,
+            "new_issues_per_fix_round": list[int],
+        }
+    """
+    fix_rounds = []
+    p0_series = []
+
+    for r in rounds:
+        rv = r.get("reviewer")
+        if rv is not None:
+            issues = rv.get("issues", {})
+            p0 = issues.get("P0", 0)
+            p0_series.append(p0)
+
+        coder = r.get("coder")
+        if coder is not None and coder.get("phase") == "fix":
+            fix_rounds.append(r)
+
+    # tokens per P0 fixed
+    tokens_per_p0 = None
+    if len(p0_series) >= 2:
+        total_fix_tokens = sum(
+            r["coder"]["total_tokens"] for r in fix_rounds
+            if r.get("coder") is not None
+        )
+        p0_fixed = p0_series[0] - p0_series[-1]
+        if p0_fixed > 0:
+            tokens_per_p0 = round(total_fix_tokens / p0_fixed)
+
+    # P0 reduction rate per round
+    reduction_rate = None
+    if len(p0_series) >= 2 and p0_series[0] > 0:
+        reduction_rate = round((p0_series[0] - p0_series[-1]) / p0_series[0] * 100, 1)
+
+    # New issues introduced (P1/P2 increase during fix rounds)
+    new_issues_per_fix = []
+    prev_total = None
+    for r in rounds:
+        rv = r.get("reviewer")
+        if rv is not None:
+            issues = rv.get("issues", {})
+            current_total = issues.get("P1", 0) + issues.get("P2", 0)
+            if prev_total is not None and current_total > prev_total:
+                new_issues_per_fix.append(current_total - prev_total)
+            else:
+                new_issues_per_fix.append(0)
+            prev_total = current_total
+
+    return {
+        "tokens_per_p0_fixed": tokens_per_p0,
+        "p0_reduction_rate_pct": reduction_rate,
+        "new_issues_per_fix_round": new_issues_per_fix,
+    }
+
+
+# ── 阶段拆解 ──
+
+def _compute_phase_breakdown(rounds: list[dict]) -> dict:
+    """按阶段拆解 tokens 和时间。
+
+    Returns:
+        { "generate": {...}, "fix": {...}, "review": {...} }
+    """
+    breakdown = {}
+    for phase_name in ("generate", "fix", "review"):
+        breakdown[phase_name] = {
+            "calls": 0,
+            "total_tokens": 0,
+            "total_duration_ms": 0,
+        }
+
+    for r in rounds:
+        for role_key in ("coder", "reviewer"):
+            entry = r.get(role_key)
+            if entry is None:
+                continue
+            phase = entry.get("phase", "")
+            if phase in breakdown:
+                breakdown[phase]["calls"] += 1
+                breakdown[phase]["total_tokens"] += entry.get("total_tokens", 0)
+                breakdown[phase]["total_duration_ms"] += entry.get("duration_ms", 0)
+
+    # 去掉 0 调用的阶段
+    return {k: v for k, v in breakdown.items() if v["calls"] > 0}
 
 
 # ── 需求 slug ──
@@ -337,8 +447,14 @@ def from_jsonl(session_id: str, jsonl_path: str,
     # 5. 收敛分析
     convergence = _compute_convergence(rounds, max_retries)
 
+    # 5b. 修复效率
+    fix_efficiency = _compute_fix_efficiency(rounds)
+
+    # 5c. 阶段拆解
+    phase_breakdown = _compute_phase_breakdown(rounds)
+
     # 6. 汇总
-    summary = _compute_summary(rounds, convergence)
+    summary = _compute_summary(rounds, convergence, records)
 
     # 7. 元信息
     first_ts = records[0].get("ts", 0)
@@ -391,6 +507,8 @@ def from_jsonl(session_id: str, jsonl_path: str,
         },
         "rounds": rounds,
         "convergence": convergence,
+        "fix_efficiency": fix_efficiency,
+        "phase_breakdown": phase_breakdown,
         "summary": summary,
     }
 
@@ -503,8 +621,9 @@ if __name__ == "__main__":
     pdir = sys.argv[4] if len(sys.argv) > 4 else os.getcwd()
     req = sys.argv[5] if len(sys.argv) > 5 else ""
     mr = int(sys.argv[6]) if len(sys.argv) > 6 else 3
+    bs = sys.argv[7] if len(sys.argv) > 7 else "strict"
 
-    data = from_jsonl(sid, jpath, rdir, pdir, req, mr)
+    data = from_jsonl(sid, jpath, rdir, pdir, req, mr, bs)
     if data is None:
         print("No data to synthesize (empty JSONL).", file=sys.stderr)
         sys.exit(0)
