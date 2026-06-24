@@ -159,6 +159,57 @@ Phase 0 更新为：
 2. 缺失时交互询问一次
 3. 传入 `pipeline_engine.cli start --target-dir <值>`
 
+### 6. `engine.py` — 修复轮次路径加入 `{run_id}`
+
+**文件:** `agents/scheduler/pipeline_engine/engine.py`
+
+`_render_prompt` 中修复轮次的 `review_context` 路径，加上 `{run_id}` 子目录：
+
+```diff
+- "1. review-output/pre-check-result.json — 程序预检结果\n"
+- "2. review-output/review-result.json — AI 语义检查结果（如存在）\n"
+- "3. review-output/pre-check-report.md — 预检报告\n\n"
++ "1. review-output/{run_id}/pre-check-result.json — 程序预检结果\n"
++ "2. review-output/{run_id}/review-result.json — AI 语义检查结果（如存在）\n"
++ "3. review-output/{run_id}/pre-check-report.md — 预检报告\n\n"
+```
+
+### 7. `pipeline.yaml` — reviewer outputs 加入 `{run_id}`
+
+**文件:** `agents/scheduler/pipeline.yaml`
+
+```diff
+      outputs:
+-       - pre_check: "review-output/pre-check-result.json"
+-       - ai_review: "review-output/review-result.json"
+-       - final_report: "review-output/final-review-report.md"
++       - pre_check: "review-output/{run_id}/pre-check-result.json"
++       - ai_review: "review-output/{run_id}/review-result.json"
++       - final_report: "review-output/{run_id}/final-review-report.md"
+```
+
+### 8. `review-post-hook.sh` — 默认路径去掉硬编码 run_id
+
+**文件:** `agents/reviewer/hooks/review-post-hook.sh`
+
+移除硬编码的旧 run_id，改为从 `code-check-config.yaml` 读取 `output_dir`：
+
+```diff
+- PRE_CHECK_JSON="${1:-$PROJECT_DIR/review-output/20260624035444-001/pre-check-result.json}"
+- AI_CHECK_JSON="${2:-$PROJECT_DIR/review-output/20260624035444-001/review-result.json}"
+- OUTPUT_MD="${3:-$PROJECT_DIR/review-output/20260624035444-001/final-review-report.md}"
++ # 从 code-check-config.yaml 读取 output_dir
++ OUTPUT_DIR=$(python3 -c "
++ import yaml, sys
++ with open(sys.argv[1]) as f:
++     c = yaml.safe_load(f)
++ print(c.get('output_dir', 'review-output'))
++ " "$CHECK_SYSTEM_DIR/code-check-config.yaml")
++ PRE_CHECK_JSON="${1:-$PROJECT_DIR/$OUTPUT_DIR/pre-check-result.json}"
++ AI_CHECK_JSON="${2:-$PROJECT_DIR/$OUTPUT_DIR/review-result.json}"
++ OUTPUT_MD="${3:-$PROJECT_DIR/$OUTPUT_DIR/final-review-report.md}"
+```
+
 ## 测试计划
 
 ### 模型单元测试（`test_models.py`）
