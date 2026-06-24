@@ -124,6 +124,132 @@ def _detect_anomalies(runs: list[dict], baselines: dict) -> list[dict]:
     return alerts_per_run
 
 
+def _render_sparkline(values: list[float], labels: list[str], max_label: str) -> str:
+    """将数值列表渲染为 ASCII sparkline。8 级高度字符: " ▁▂▃▄▅▆▇█" """
+    if not values or len(values) < 2:
+        return ""
+
+    chars = " ▁▂▃▄▅▆▇█"
+    vmin = min(values)
+    vmax = max(values)
+
+    if vmax == vmin:
+        indices = [4] * len(values)
+    else:
+        indices = [round((v - vmin) / (vmax - vmin) * 7) for v in values]
+
+    line = "".join(chars[i] for i in indices)
+
+    max_str = f"{max_label:>10} ┤ "
+    bottom = " " * 14 + "└" + "─" * (len(values) * 1) + "─"
+    xlabels = " " * 16 + " ".join(labels[:len(values)])
+
+    return f"{max_str}{line}\n{bottom}\n{xlabels}\n"
+
+
+def _compute_change_attribution(runs: list[dict], project_dir: str = ".") -> list[dict]:
+    """对比相邻运行，检测规范文件变更并计算性能影响。"""
+    import subprocess
+
+    attributions = []
+    prev = None
+
+    for r in runs:
+        meta = r.get("meta", {})
+        commit = meta.get("git_commit_at_start", "")
+        agents = r.get("agents", {})
+        summary = r.get("summary", {})
+        conv = r.get("convergence", {})
+
+        if prev is None:
+            prev = {"run": r, "commit": commit}
+            attributions.append({
+                "run_id": meta.get("run_id", ""),
+                "commit": commit,
+                "changed_agent": None,
+                "changed_files": [],
+                "fingerprint_change": None,
+                "perf_delta": None,
+            })
+            continue
+
+        # 检查 commit 是否变化
+        if commit == prev["commit"] or not commit or not prev["commit"]:
+            attributions.append({
+                "run_id": meta.get("run_id", ""),
+                "commit": commit,
+                "changed_agent": None,
+                "changed_files": [],
+                "fingerprint_change": None,
+                "perf_delta": None,
+            })
+            prev = {"run": r, "commit": commit}
+            continue
+
+        # 检测指纹变化
+        changed_agent = None
+        fp_change = None
+        prev_agents = prev["run"].get("agents", {})
+
+        for agent_key in ("coder", "reviewer"):
+            prev_fp = prev_agents.get(agent_key, {}).get("fingerprint", "")
+            curr_fp = agents.get(agent_key, {}).get("fingerprint", "")
+            if prev_fp and curr_fp and prev_fp != curr_fp:
+                changed_agent = agent_key
+                fp_change = {"old": prev_fp, "new": curr_fp}
+                break
+
+        # 获取变更文件
+        changed_files = []
+        if changed_agent:
+            try:
+                result = subprocess.run(
+                    ["git", "-C", project_dir, "diff", "--stat",
+                     f"{prev['commit']}..{commit}", "--",
+                     "agents/coder/", "agents/reviewer/", "agents/scheduler/"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    for line in result.stdout.strip().split("\n"):
+                        if "|" in line:
+                            changed_files.append(line.strip())
+            except Exception:
+                pass
+
+        # 计算性能 delta
+        prev_summary = prev["run"].get("summary", {})
+        tokens_delta = None
+        if prev_summary.get("total_tokens", 0) > 0:
+            tokens_delta = round(
+                (summary.get("total_tokens", 0) - prev_summary["total_tokens"])
+                / prev_summary["total_tokens"] * 100, 1
+            )
+
+        prev_series = prev["run"].get("convergence", {}).get("series", [])
+        curr_series = conv.get("series", [])
+        p0_delta = None
+        if prev_series and curr_series:
+            p0_delta = curr_series[0].get("P0", 0) - prev_series[0].get("P0", 0)
+
+        perf_delta = {
+            "tokens_pct": tokens_delta,
+            "p0_delta": p0_delta,
+        }
+
+        attributions.append({
+            "run_id": meta.get("run_id", ""),
+            "commit": commit,
+            "changed_agent": changed_agent,
+            "changed_files": changed_files,
+            "fingerprint_change": fp_change,
+            "perf_delta": perf_delta,
+        })
+
+        prev = {"run": r, "commit": commit}
+
+    return attributions
+
+
 def render_comparison_md(runs: list[dict]) -> str:
     """从多份 benchmark JSON 渲染横向对比 Markdown 报告。"""
     if not runs:
@@ -198,6 +324,64 @@ def render_comparison_md(runs: list[dict]) -> str:
         )
     lines.append("")
 
+    # ── Sparkline 趋势图 ──
+    if len(runs) >= 2:
+        lines.append("## 趋势图")
+        lines.append("")
+
+        # Token 趋势
+        token_vals = [r["summary"]["total_tokens"] for r in runs]
+        token_labels = [f"R{i+1}" for i in range(len(runs))]
+        spark = _render_sparkline(token_vals, token_labels, f"{max(token_vals):,}")
+        if spark:
+            lines.append("### Token 消耗")
+            lines.append("")
+            lines.append("```")
+            lines.append(spark.rstrip())
+            lines.append("```")
+            lines.append("")
+
+        # P0 趋势
+        p0_vals = []
+        for r in runs:
+            series = r.get("convergence", {}).get("series", [])
+            p0_vals.append(series[0].get("P0", 0) if series else 0)
+        if any(v > 0 for v in p0_vals):
+            spark = _render_sparkline(p0_vals, token_labels, str(max(p0_vals)))
+            if spark:
+                lines.append("### P0 数量")
+                lines.append("")
+                lines.append("```")
+                lines.append(spark.rstrip())
+                lines.append("```")
+                lines.append("")
+
+        # 收敛轮次趋势
+        rounds_vals = [len(r.get("rounds", [])) for r in runs]
+        spark = _render_sparkline(rounds_vals, token_labels, str(max(rounds_vals)))
+        if spark:
+            lines.append("### 收敛轮次")
+            lines.append("")
+            lines.append("```")
+            lines.append(spark.rstrip())
+            lines.append("```")
+            lines.append("")
+
+        # 缓存命中率趋势
+        cache_vals = [
+            r.get("summary", {}).get("cache_efficiency", {}).get("cache_hit_ratio", 0) * 100
+            for r in runs
+        ]
+        if any(v > 0 for v in cache_vals):
+            spark = _render_sparkline(cache_vals, token_labels, f"{max(cache_vals):.0f}%")
+            if spark:
+                lines.append("### 缓存命中率")
+                lines.append("")
+                lines.append("```")
+                lines.append(spark.rstrip())
+                lines.append("```")
+                lines.append("")
+
     # ── 趋势：收敛性 ──
     lines.append("## 收敛趋势")
     lines.append("")
@@ -257,6 +441,55 @@ def render_comparison_md(runs: list[dict]) -> str:
                     f"| {alert['deviation']}σ | {severity_icon} {alert['severity']} |"
                 )
         lines.append("")
+
+    # ── 变更归因 ──
+    attributions = _compute_change_attribution(runs, project_dir=".")
+    has_changes = any(a.get("changed_agent") for a in attributions)
+    if has_changes:
+        lines.append("## 变更归因")
+        lines.append("")
+        lines.append("| 运行 | Commit | 变更 Agent | 文件数 | Token 变化 | P0 变化 |")
+        lines.append("|------|--------|-----------|--------|-----------|---------|")
+        for attr in attributions:
+            if attr.get("changed_agent"):
+                delta = attr.get("perf_delta", {}) or {}
+                tokens_str = f"{delta.get('tokens_pct', 0):+.1f}%" if delta.get("tokens_pct") is not None else "—"
+                p0_str = f"{delta.get('p0_delta', 0):+d}" if delta.get("p0_delta") is not None else "—"
+                lines.append(
+                    f"| `{attr['run_id']}` | `{attr['commit']}` "
+                    f"| {attr['changed_agent']} | {len(attr['changed_files'])} "
+                    f"| {tokens_str} | {p0_str} |"
+                )
+            else:
+                lines.append(
+                    f"| `{attr['run_id']}` | `{attr['commit']}` "
+                    f"| — | 0 | — | — |"
+                )
+        lines.append("")
+
+        # 变更详情
+        for attr in attributions:
+            if attr.get("changed_files"):
+                lines.append(f"### {attr['run_id']} 变更详情 (`{attr['commit']}`)")
+                lines.append("")
+                lines.append(f"**{attr['changed_agent']} 规范变更 ({len(attr['changed_files'])} 文件):**")
+                lines.append("")
+                lines.append("```")
+                for f in attr["changed_files"]:
+                    lines.append(f"  {f}")
+                lines.append("```")
+
+                delta = attr.get("perf_delta", {}) or {}
+                fp = attr.get("fingerprint_change", {}) or {}
+                lines.append("")
+                lines.append("**性能影响:**")
+                lines.append("")
+                lines.append(f"- 指纹变更: `{fp.get('old', '?')}` → `{fp.get('new', '?')}`")
+                if delta.get("tokens_pct") is not None:
+                    lines.append(f"- Token: {delta['tokens_pct']:+.1f}%")
+                if delta.get("p0_delta") is not None:
+                    lines.append(f"- 起始 P0: {delta['p0_delta']:+d}")
+                lines.append("")
 
     return "\n".join(lines) + "\n"
 
