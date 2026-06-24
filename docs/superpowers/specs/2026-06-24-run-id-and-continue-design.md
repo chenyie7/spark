@@ -142,6 +142,48 @@ Phase 0 从：
 +     self.run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 ```
 
+### 4. `conftest.py` — 新增 run_id 示例常量，集中管理测试格式
+
+**文件:** `agents/scheduler/tests/conftest.py`
+
+新增两个模块级常量，所有测试引用它们替代硬编码的 run_id：
+
+```python
+# 符合 {timestamp}-{target_dir} 格式的示例 run_id
+SAMPLE_RUN_ID = "20260624103000-test"
+# target_dir="." 时的纯时间戳示例 run_id
+SAMPLE_RUN_ID_NO_TARGET = "20260624103000"
+```
+
+同时更新以下文件中的硬编码 run_id：
+
+**`test_cli.py` 第 104 行：**
+```diff
+- assert len(data["run_id"]) == 18  # YYYYMMDDHHmmss-NNN
++ # run_id 长度可变：纯时间戳 14 位，带 target_dir 时为 15 + len(target_dir)
++ assert data["run_id"].startswith("202")
+```
+
+**`test_engine.py` 第 198-204 行：**
+```diff
+- engine.state.run_id = "20260624103000-001"
++ from tests.conftest import SAMPLE_RUN_ID
++ engine.state.run_id = SAMPLE_RUN_ID
+...
+- assert "20260624103000-001" in action.nodes[0].prompt
++ assert SAMPLE_RUN_ID in action.nodes[0].prompt
+```
+
+**`test_models.py` 第 362-375 行：**
+```diff
+- obj = PipelineState(pipeline_name="test", run_id="20260624103000-001")
+- assert obj.run_id == "20260624103000-001"
++ from tests.conftest import SAMPLE_RUN_ID
++ obj = PipelineState(pipeline_name="test", run_id=SAMPLE_RUN_ID)
++ assert obj.run_id == SAMPLE_RUN_ID
+```
+（三处类似替换）
+
 ## 测试计划
 
 ### CLI 测试（`test_cli.py`）
