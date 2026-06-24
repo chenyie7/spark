@@ -307,7 +307,7 @@ class PipelineState:
         self.status = PipelineStatus.RUNNING
         self.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         if not self.run_id:
-            self.run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "-000"
+            self.run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         self._touch()
 
     def complete(self):
