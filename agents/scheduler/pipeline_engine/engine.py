@@ -313,16 +313,17 @@ class PipelineEngine:
             review_context = (
                 "\n\n⚠️ 这是第 {round}/{max_retries} 轮修复。\n\n"
                 "请先读取以下文件，了解上一轮审查发现的问题：\n"
-                "1. review-output/pre-check-result.json — 程序预检结果\n"
-                "2. review-output/review-result.json — AI 语义检查结果（如存在）\n"
-                "3. review-output/pre-check-report.md — 预检报告\n\n"
+                "1. review-output/{run_id}/pre-check-result.json — 程序预检结果\n"
+                "2. review-output/{run_id}/review-result.json — AI 语义检查结果（如存在）\n"
+                "3. review-output/{run_id}/pre-check-report.md — 预检报告\n\n"
                 "然后逐个修复所有阻断级问题。\n\n"
                 "修复原则：\n"
                 "- 只修改有问题的文件和行\n"
                 "- 修复后必须符合 agents/coder/ 下的所有规范\n"
                 "- 不确定的改动，加注释说明原因"
             ).format(round=self.state.round,
-                     max_retries=self.config.defaults.max_retries)
+                     max_retries=self.config.defaults.max_retries,
+                     run_id=self.state.run_id)
 
         variables = {
             "requirement": self.state.requirement,
@@ -330,6 +331,7 @@ class PipelineEngine:
             "round": str(self.state.round),
             "max_retries": str(self.config.defaults.max_retries),
             "run_id": self.state.run_id,
+            "target_dir": self.state.target_dir,
         }
 
         try:
