@@ -4,8 +4,7 @@ All model classes follow the Spring Boot @ConfigurationProperties pattern:
 YAML structure → strict dataclass tree → from_dict() factory with validation.
 """
 
-# NOTE: dataclass, field, datetime, timezone, Optional are forward-declared here
-# for upcoming dataclass definitions in Tasks 3 and 4. Do not remove.
+# Imports required by the model classes in this module.
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
@@ -234,5 +233,8 @@ class PipelineConfig:
 
     def get_start_nodes(self) -> list[NodeConfig]:
         """Nodes with zero incoming ``on_success`` edges (no forward dependency)."""
+        # Only on_success edges count as forward dependencies; on_condition edges
+        # are feedback loops (e.g. review FAILED -> coder) and should not block
+        # a node from being considered a start node.
         has_incoming = {e.to for e in self.edges if e.trigger == TriggerType.ON_SUCCESS}
         return [n for n in self.nodes if n.id not in has_incoming]

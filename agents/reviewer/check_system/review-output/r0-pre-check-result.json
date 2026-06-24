@@ -1,0 +1,639 @@
+{
+  "metadata": {
+    "module": "code-check",
+    "scan_scope": {
+      "base_path": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java",
+      "file_count": 19,
+      "breakdown": {
+        "dto": 5,
+        "controller": 1,
+        "entity": 1,
+        "mapper": 1,
+        "service": 2
+      }
+    },
+    "timestamp": "2026-06-20T16:37:32Z",
+    "blocking_strategy": "strict",
+    "passed": true
+  },
+  "file_reports": [
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/UserCenterApplication.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/common/BusinessException.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/common/GlobalExceptionHandler.java",
+      "findings": [
+        {
+          "code": "BE-IN-01",
+          "level": "P2",
+          "line": 0,
+          "message": "GlobalExceptionHandler 缺少 @Tag 注解",
+          "evidence": "缺少 @Tag 注解"
+        },
+        {
+          "code": "BE-IN-02",
+          "level": "P2",
+          "line": 22,
+          "message": "handleValidation 缺少 @Operation 注解",
+          "evidence": "方法 handleValidation 缺少 @Operation",
+          "method": "handleValidation"
+        },
+        {
+          "code": "BE-IN-02",
+          "level": "P2",
+          "line": 30,
+          "message": "handleBusiness 缺少 @Operation 注解",
+          "evidence": "方法 handleBusiness 缺少 @Operation",
+          "method": "handleBusiness"
+        },
+        {
+          "code": "BE-IN-02",
+          "level": "P2",
+          "line": 43,
+          "message": "handleSystem 缺少 @Operation 注解",
+          "evidence": "方法 handleSystem 缺少 @Operation",
+          "method": "handleSystem"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/common/LoginContextHolder.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/common/PageQueryDTO.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/common/PageResult.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/common/Result.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/config/MetaObjectHandlerConfig.java",
+      "findings": [
+        {
+          "code": "BE-QL-08",
+          "level": "P2",
+          "line": 0,
+          "message": "MetaObjectHandlerConfig 缺少 @Slf4j 注解",
+          "evidence": "缺少 @Slf4j 注解"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/config/MybatisPlusConfig.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/controller/UserController.java",
+      "findings": [
+        {
+          "code": "BE-QL-08",
+          "level": "P2",
+          "line": 0,
+          "message": "UserController 缺少 @Slf4j 注解",
+          "evidence": "缺少 @Slf4j 注解"
+        },
+        {
+          "code": "BE-IN-01",
+          "level": "P2",
+          "line": 0,
+          "message": "UserController 缺少 @Tag 注解",
+          "evidence": "缺少 @Tag 注解"
+        },
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "UserController.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/controller)"
+        },
+        {
+          "code": "BE-QL-30",
+          "level": "P2",
+          "line": 20,
+          "message": "register 的 @Validated 未指定分组",
+          "evidence": "参数 RegisterDTO dto 的 @Validated 未指定分组",
+          "method": "register"
+        },
+        {
+          "code": "BE-IN-02",
+          "level": "P2",
+          "line": 20,
+          "message": "register 缺少 @Operation 注解",
+          "evidence": "方法 register 缺少 @Operation",
+          "method": "register"
+        },
+        {
+          "code": "BE-QL-15",
+          "level": "P2",
+          "line": 26,
+          "message": "login 应使用 Result.success() 无 data 返回",
+          "evidence": "方法 login 缺少: return\\s+Result\\.success\\(\\s*\\)",
+          "method": "login"
+        },
+        {
+          "code": "BE-QL-30",
+          "level": "P2",
+          "line": 26,
+          "message": "login 的 @Validated 未指定分组",
+          "evidence": "参数 LoginDTO dto 的 @Validated 未指定分组",
+          "method": "login"
+        },
+        {
+          "code": "BE-IN-02",
+          "level": "P2",
+          "line": 26,
+          "message": "login 缺少 @Operation 注解",
+          "evidence": "方法 login 缺少 @Operation",
+          "method": "login"
+        },
+        {
+          "code": "BE-IN-02",
+          "level": "P2",
+          "line": 32,
+          "message": "get 缺少 @Operation 注解",
+          "evidence": "方法 get 缺少 @Operation",
+          "method": "get"
+        },
+        {
+          "code": "BE-IN-03",
+          "level": "P2",
+          "line": 32,
+          "message": "get 的 Long id 缺少 @Parameter 注解",
+          "evidence": "参数 Long id 的 @Validated 未指定分组",
+          "method": "get"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/dto/LoginDTO.java",
+      "findings": [
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "LoginDTO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/dto)"
+        },
+        {
+          "code": "BE-IN-04",
+          "level": "P2",
+          "line": 8,
+          "message": "LoginDTO.username 缺少 @Schema 注解",
+          "evidence": "字段 String username 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-04",
+          "level": "P2",
+          "line": 10,
+          "message": "LoginDTO.password 缺少 @Schema 注解",
+          "evidence": "字段 String password 缺少 @Schema"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/dto/RegisterDTO.java",
+      "findings": [
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "RegisterDTO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/dto)"
+        },
+        {
+          "code": "BE-IN-04",
+          "level": "P2",
+          "line": 8,
+          "message": "RegisterDTO.username 缺少 @Schema 注解",
+          "evidence": "字段 String username 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-04",
+          "level": "P2",
+          "line": 10,
+          "message": "RegisterDTO.password 缺少 @Schema 注解",
+          "evidence": "字段 String password 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-04",
+          "level": "P2",
+          "line": 12,
+          "message": "RegisterDTO.email 缺少 @Schema 注解",
+          "evidence": "字段 String email 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-04",
+          "level": "P2",
+          "line": 14,
+          "message": "RegisterDTO.phone 缺少 @Schema 注解",
+          "evidence": "字段 String phone 缺少 @Schema"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/entity/UserEntity.java",
+      "findings": [
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "UserEntity.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/entity)"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/enums/BusinessErrorEnum.java",
+      "findings": []
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/mapper/UserMapper.java",
+      "findings": [
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "UserMapper.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/mapper)"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/service/UserService.java",
+      "findings": [
+        {
+          "code": "BE-QL-08",
+          "level": "P2",
+          "line": 0,
+          "message": "UserService 缺少 @Slf4j 注解",
+          "evidence": "缺少 @Slf4j 注解"
+        },
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "UserService.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/service)"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/service/impl/UserServiceImpl.java",
+      "findings": [
+        {
+          "code": "BE-QL-08",
+          "level": "P2",
+          "line": 0,
+          "message": "UserServiceImpl 缺少 @Slf4j 注解",
+          "evidence": "缺少 @Slf4j 注解"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/vo/LoginVO.java",
+      "findings": [
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "LoginVO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/vo)"
+        },
+        {
+          "code": "BE-IN-05",
+          "level": "P2",
+          "line": 8,
+          "message": "LoginVO.token 缺少 @Schema 注解",
+          "evidence": "字段 String token 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-05",
+          "level": "P2",
+          "line": 10,
+          "message": "LoginVO.user 缺少 @Schema 注解",
+          "evidence": "字段 UserVO user 缺少 @Schema"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/vo/UserVO.java",
+      "findings": [
+        {
+          "code": "BE-ST-03",
+          "level": "P2",
+          "line": 0,
+          "message": "启动类应放在根包下",
+          "evidence": "UserVO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/vo)"
+        },
+        {
+          "code": "BE-IN-05",
+          "level": "P2",
+          "line": 8,
+          "message": "UserVO.id 缺少 @Schema 注解",
+          "evidence": "字段 Long id 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-05",
+          "level": "P2",
+          "line": 10,
+          "message": "UserVO.username 缺少 @Schema 注解",
+          "evidence": "字段 String username 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-05",
+          "level": "P2",
+          "line": 12,
+          "message": "UserVO.email 缺少 @Schema 注解",
+          "evidence": "字段 String email 缺少 @Schema"
+        },
+        {
+          "code": "BE-IN-05",
+          "level": "P2",
+          "line": 14,
+          "message": "UserVO.phone 缺少 @Schema 注解",
+          "evidence": "字段 String phone 缺少 @Schema"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_checks": 19,
+    "passed": 8,
+    "failed": [
+      {
+        "code": "BE-IN-01",
+        "level": "P2",
+        "line": 0,
+        "message": "GlobalExceptionHandler 缺少 @Tag 注解",
+        "evidence": "缺少 @Tag 注解"
+      },
+      {
+        "code": "BE-IN-02",
+        "level": "P2",
+        "line": 22,
+        "message": "handleValidation 缺少 @Operation 注解",
+        "evidence": "方法 handleValidation 缺少 @Operation",
+        "method": "handleValidation"
+      },
+      {
+        "code": "BE-IN-02",
+        "level": "P2",
+        "line": 30,
+        "message": "handleBusiness 缺少 @Operation 注解",
+        "evidence": "方法 handleBusiness 缺少 @Operation",
+        "method": "handleBusiness"
+      },
+      {
+        "code": "BE-IN-02",
+        "level": "P2",
+        "line": 43,
+        "message": "handleSystem 缺少 @Operation 注解",
+        "evidence": "方法 handleSystem 缺少 @Operation",
+        "method": "handleSystem"
+      },
+      {
+        "code": "BE-QL-08",
+        "level": "P2",
+        "line": 0,
+        "message": "MetaObjectHandlerConfig 缺少 @Slf4j 注解",
+        "evidence": "缺少 @Slf4j 注解"
+      },
+      {
+        "code": "BE-QL-08",
+        "level": "P2",
+        "line": 0,
+        "message": "UserController 缺少 @Slf4j 注解",
+        "evidence": "缺少 @Slf4j 注解"
+      },
+      {
+        "code": "BE-IN-01",
+        "level": "P2",
+        "line": 0,
+        "message": "UserController 缺少 @Tag 注解",
+        "evidence": "缺少 @Tag 注解"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "UserController.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/controller)"
+      },
+      {
+        "code": "BE-QL-30",
+        "level": "P2",
+        "line": 20,
+        "message": "register 的 @Validated 未指定分组",
+        "evidence": "参数 RegisterDTO dto 的 @Validated 未指定分组",
+        "method": "register"
+      },
+      {
+        "code": "BE-IN-02",
+        "level": "P2",
+        "line": 20,
+        "message": "register 缺少 @Operation 注解",
+        "evidence": "方法 register 缺少 @Operation",
+        "method": "register"
+      },
+      {
+        "code": "BE-QL-15",
+        "level": "P2",
+        "line": 26,
+        "message": "login 应使用 Result.success() 无 data 返回",
+        "evidence": "方法 login 缺少: return\\s+Result\\.success\\(\\s*\\)",
+        "method": "login"
+      },
+      {
+        "code": "BE-QL-30",
+        "level": "P2",
+        "line": 26,
+        "message": "login 的 @Validated 未指定分组",
+        "evidence": "参数 LoginDTO dto 的 @Validated 未指定分组",
+        "method": "login"
+      },
+      {
+        "code": "BE-IN-02",
+        "level": "P2",
+        "line": 26,
+        "message": "login 缺少 @Operation 注解",
+        "evidence": "方法 login 缺少 @Operation",
+        "method": "login"
+      },
+      {
+        "code": "BE-IN-02",
+        "level": "P2",
+        "line": 32,
+        "message": "get 缺少 @Operation 注解",
+        "evidence": "方法 get 缺少 @Operation",
+        "method": "get"
+      },
+      {
+        "code": "BE-IN-03",
+        "level": "P2",
+        "line": 32,
+        "message": "get 的 Long id 缺少 @Parameter 注解",
+        "evidence": "参数 Long id 的 @Validated 未指定分组",
+        "method": "get"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "LoginDTO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/dto)"
+      },
+      {
+        "code": "BE-IN-04",
+        "level": "P2",
+        "line": 8,
+        "message": "LoginDTO.username 缺少 @Schema 注解",
+        "evidence": "字段 String username 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-04",
+        "level": "P2",
+        "line": 10,
+        "message": "LoginDTO.password 缺少 @Schema 注解",
+        "evidence": "字段 String password 缺少 @Schema"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "RegisterDTO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/dto)"
+      },
+      {
+        "code": "BE-IN-04",
+        "level": "P2",
+        "line": 8,
+        "message": "RegisterDTO.username 缺少 @Schema 注解",
+        "evidence": "字段 String username 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-04",
+        "level": "P2",
+        "line": 10,
+        "message": "RegisterDTO.password 缺少 @Schema 注解",
+        "evidence": "字段 String password 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-04",
+        "level": "P2",
+        "line": 12,
+        "message": "RegisterDTO.email 缺少 @Schema 注解",
+        "evidence": "字段 String email 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-04",
+        "level": "P2",
+        "line": 14,
+        "message": "RegisterDTO.phone 缺少 @Schema 注解",
+        "evidence": "字段 String phone 缺少 @Schema"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "UserEntity.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/entity)"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "UserMapper.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/mapper)"
+      },
+      {
+        "code": "BE-QL-08",
+        "level": "P2",
+        "line": 0,
+        "message": "UserService 缺少 @Slf4j 注解",
+        "evidence": "缺少 @Slf4j 注解"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "UserService.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/service)"
+      },
+      {
+        "code": "BE-QL-08",
+        "level": "P2",
+        "line": 0,
+        "message": "UserServiceImpl 缺少 @Slf4j 注解",
+        "evidence": "缺少 @Slf4j 注解"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "LoginVO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/vo)"
+      },
+      {
+        "code": "BE-IN-05",
+        "level": "P2",
+        "line": 8,
+        "message": "LoginVO.token 缺少 @Schema 注解",
+        "evidence": "字段 String token 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-05",
+        "level": "P2",
+        "line": 10,
+        "message": "LoginVO.user 缺少 @Schema 注解",
+        "evidence": "字段 UserVO user 缺少 @Schema"
+      },
+      {
+        "code": "BE-ST-03",
+        "level": "P2",
+        "line": 0,
+        "message": "启动类应放在根包下",
+        "evidence": "UserVO.java 不在根包下 (当前路径: /Users/chenyi/ai-project/workflow-agent-demo/src/main/java/com/chenyi/usercenter/vo)"
+      },
+      {
+        "code": "BE-IN-05",
+        "level": "P2",
+        "line": 8,
+        "message": "UserVO.id 缺少 @Schema 注解",
+        "evidence": "字段 Long id 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-05",
+        "level": "P2",
+        "line": 10,
+        "message": "UserVO.username 缺少 @Schema 注解",
+        "evidence": "字段 String username 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-05",
+        "level": "P2",
+        "line": 12,
+        "message": "UserVO.email 缺少 @Schema 注解",
+        "evidence": "字段 String email 缺少 @Schema"
+      },
+      {
+        "code": "BE-IN-05",
+        "level": "P2",
+        "line": 14,
+        "message": "UserVO.phone 缺少 @Schema 注解",
+        "evidence": "字段 String phone 缺少 @Schema"
+      }
+    ]
+  },
+  "hints_for_ai": []
+}

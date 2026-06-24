@@ -1,36 +1,36 @@
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/block-agents-write.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/benchmarks/hooks/dump-agent-payload.sh"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/benchmarks/hooks/synthesize-benchmark.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
+// {
+//   "hooks": {
+//     "PreToolUse": [
+//       {
+//         "matcher": "Edit|Write",
+//         "hooks": [
+//           {
+//             "type": "command",
+//             "command": "bash ${CLAUDE_PROJECT_DIR}/hooks/block-agents-write.sh"
+//           }
+//         ]
+//       }
+//     ],
+//     "PostToolUse": [
+//       {
+//         "matcher": "Agent",
+//         "hooks": [
+//           {
+//             "type": "command",
+//             "command": "bash ${CLAUDE_PROJECT_DIR}/benchmarks/hooks/dump-agent-payload.sh"
+//           }
+//         ]
+//       }
+//     ],
+//     "Stop": [
+//       {
+//         "hooks": [
+//           {
+//             "type": "command",
+//             "command": "bash ${CLAUDE_PROJECT_DIR}/benchmarks/hooks/synthesize-benchmark.sh"
+//           }
+//         ]
+//       }
+//     ]
+//   }
+// }

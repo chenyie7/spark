@@ -37,7 +37,10 @@ echo "============================================"
 
 cd "$CHECK_SYSTEM_DIR"
 
-python3 -m code_check.cli scan "$TARGET_PATH"
+# Resolve target path relative to PROJECT_DIR (the script changes to CHECK_SYSTEM_DIR,
+# but TARGET_PATH is relative to the project root)
+TARGET_ABS="$PROJECT_DIR/$TARGET_PATH"
+python3 -m code_check.cli scan "$TARGET_ABS"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then

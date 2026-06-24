@@ -1,0 +1,175 @@
+{
+  "metadata": {
+    "module": "usercenter",
+    "precheck_passed": true,
+    "precheck_issues": [
+      "P2: GlobalExceptionHandler 缺少 @Tag 注解",
+      "P2: UserController 缺少 @Tag, @Slf4j, @Operation 注解，@Validated 未指定分组",
+      "P2: DTO/VO 字段缺少 @Schema 注解",
+      "P2: 多个文件缺少 @Slf4j 注解",
+      "P2: 非根包文件触发 BE-ST-03"
+    ],
+    "timestamp": "2026-06-21T00:00:00Z"
+  },
+  "items": [
+    {
+      "code": "BE-ST-04",
+      "category": "分层架构",
+      "result": "PASS",
+      "file": "UserController.java",
+      "line": 18,
+      "evidence": "private final UserService userService;",
+      "suggestion": null
+    },
+    {
+      "code": "BE-ST-05",
+      "category": "分层架构",
+      "result": "PASS",
+      "file": "UserServiceImpl.java",
+      "line": 24,
+      "evidence": "public class UserServiceImpl implements UserService",
+      "suggestion": null
+    },
+    {
+      "code": "BE-ST-07",
+      "category": "分层架构",
+      "result": "PASS",
+      "file": "UserService.java",
+      "line": 16,
+      "evidence": "UserVO getById(Long id);",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-01",
+      "category": "异常处理",
+      "result": "PASS",
+      "file": "UserServiceImpl.java",
+      "line": 36,
+      "evidence": "throw new BusinessException(BusinessErrorEnum.USERNAME_DUPLICATE);",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-02",
+      "category": "异常处理",
+      "result": "PASS",
+      "file": "UserServiceImpl.java",
+      "line": 51,
+      "evidence": "throw new BusinessException(BusinessErrorEnum.USER_NOT_FOUND);",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-04",
+      "category": "异常处理",
+      "result": "PASS",
+      "file": "UserController.java",
+      "line": 20,
+      "evidence": "Controller 三个方法均无 try-catch 块，异常由 GlobalExceptionHandler 统一处理",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-05",
+      "category": "异常处理",
+      "result": "PASS",
+      "file": "UserServiceImpl.java",
+      "line": 31,
+      "evidence": "Service 层三个方法均无 catch 块，不存在吞异常问题",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-06",
+      "category": "异常处理",
+      "result": "PASS",
+      "file": "GlobalExceptionHandler.java",
+      "line": 43,
+      "evidence": "@ExceptionHandler(Exception.class) public Result<Void> handleSystem(Exception e)",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-11",
+      "category": "日志质量",
+      "result": "PASS",
+      "file": "GlobalExceptionHandler.java",
+      "line": 39,
+      "evidence": "log.warn(\"业务异常 code={}, message={}\", error.getCode(), message);",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-12",
+      "category": "日志质量",
+      "result": "NA",
+      "file": "-",
+      "line": 0,
+      "evidence": "当前代码中无 for/while 循环结构",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-14",
+      "category": "代码质量",
+      "result": "PASS",
+      "file": "UserController.java",
+      "line": 21,
+      "evidence": "所有 Controller 方法返回 Result<Void>, Result<LoginVO>, Result<UserVO>",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-35",
+      "category": "代码质量",
+      "result": "NA",
+      "file": "-",
+      "line": 0,
+      "evidence": "当前代码无返回集合类型的方法",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-39",
+      "category": "代码质量",
+      "result": "NA",
+      "file": "-",
+      "line": 0,
+      "evidence": "当前代码中无 for/while 循环结构",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-41",
+      "category": "代码质量",
+      "result": "FAIL",
+      "file": "MetaObjectHandlerConfig.java",
+      "line": 39,
+      "evidence": "return userId != null ? userId : 0L;",
+      "suggestion": "0L 是魔法数字，表示未登录/系统用户，应定义为常量 DEFAULT_SYSTEM_USER_ID = 0L"
+    },
+    {
+      "code": "BE-QL-46",
+      "category": "代码质量",
+      "result": "NA",
+      "file": "-",
+      "line": 0,
+      "evidence": "当前代码中无 for/while 循环结构，Service 方法仅逐条调用 Mapper",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-19",
+      "category": "数据库规范",
+      "result": "PASS",
+      "file": "UserEntity.java",
+      "line": 12,
+      "evidence": "包含 id, createId, createName, createTime, updateId, updateName, updateTime, deleted 全套审计字段",
+      "suggestion": null
+    },
+    {
+      "code": "BE-QL-20",
+      "category": "数据库规范",
+      "result": "PASS",
+      "file": "UserEntity.java",
+      "line": 12,
+      "evidence": "@TableId(type = IdType.ASSIGN_ID) private Long id;",
+      "suggestion": null
+    }
+  ],
+  "summary": {
+    "total": 17,
+    "pass": 12,
+    "fail": 1,
+    "na": 4
+  }
+}

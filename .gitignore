@@ -11,3 +11,4 @@ src/
 # benchmark runtime artifacts (source code in benchmarks/hooks/ is committed)
 benchmarks/dumps/
 benchmarks/run-*
+pom.xml

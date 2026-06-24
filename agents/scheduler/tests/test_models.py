@@ -100,11 +100,28 @@ class TestPipelineDefaults:
         assert obj.max_retries == 3
         assert obj.block_on == ["P0"]
 
+    def test_from_dict_invalid_type(self):
+        with pytest.raises(ValueError, match="must be a dict"):
+            PipelineDefaults.from_dict("not-a-dict")
+
 
 class TestEdgeCondition:
     def test_from_dict(self):
         obj = EdgeCondition.from_dict({"status": "REVIEW_FAILED"})
         assert obj.status == "REVIEW_FAILED"
+
+    def test_from_dict_missing_status(self):
+        with pytest.raises(ValueError, match="condition.status is required"):
+            EdgeCondition.from_dict({})
+
+    def test_to_dict(self):
+        obj = EdgeCondition.from_dict({"status": "REVIEW_FAILED"})
+        d = obj.to_dict()
+        assert d == {"status": "REVIEW_FAILED"}
+
+    def test_from_dict_invalid_type(self):
+        with pytest.raises(ValueError, match="must be a dict"):
+            EdgeCondition.from_dict("not-a-dict")
 
 
 class TestEdgeConfig:
@@ -126,6 +143,15 @@ class TestEdgeConfig:
         assert obj.trigger == TriggerType.ON_CONDITION
         assert obj.condition is not None
         assert obj.condition.status == "REVIEW_FAILED"
+
+    def test_invalid_trigger(self):
+        d = {"from": "coder", "to": "reviewer", "trigger": "invalid_trigger"}
+        with pytest.raises(ValueError):
+            EdgeConfig.from_dict(d)
+
+    def test_from_dict_invalid_type(self):
+        with pytest.raises(ValueError, match="must be a dict"):
+            EdgeConfig.from_dict("not-a-dict")
 
 
 class TestNodeConfig:
@@ -152,6 +178,22 @@ class TestNodeConfig:
         assert obj.outputs == {"report": "path"}
         assert obj.timeout == "600s"
         assert obj.depends_on == ["coder"]
+
+    def test_from_dict_missing_id(self):
+        d = {"type": "agent", "agent": "checker", "description": "x",
+             "prompt_template": "Check."}
+        with pytest.raises(ValueError, match="node.id is required"):
+            NodeConfig.from_dict(d)
+
+    def test_from_dict_missing_prompt_template(self):
+        d = {"id": "checker", "type": "agent", "agent": "checker",
+             "description": "x"}
+        with pytest.raises(ValueError, match="node.prompt_template is required"):
+            NodeConfig.from_dict(d)
+
+    def test_from_dict_invalid_type(self):
+        with pytest.raises(ValueError, match="must be a dict"):
+            NodeConfig.from_dict("not-a-dict")
 
 
 class TestPipelineConfig:
@@ -205,3 +247,13 @@ class TestPipelineConfigValidation:
              "defaults": {}, "nodes": []}
         with pytest.raises(ValueError, match="edges"):
             PipelineConfig.from_dict(d)
+
+    def test_missing_name(self):
+        d = {"version": "1", "description": "d",
+             "defaults": {}, "nodes": [], "edges": []}
+        with pytest.raises(ValueError, match="pipeline.name is required"):
+            PipelineConfig.from_dict(d)
+
+    def test_from_dict_invalid_type(self):
+        with pytest.raises(ValueError, match="must be a dict"):
+            PipelineConfig.from_dict([1, 2, 3])
