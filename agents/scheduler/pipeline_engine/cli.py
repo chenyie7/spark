@@ -19,28 +19,17 @@ from pipeline_engine.engine import PipelineEngine
 from pipeline_engine.models import NodeStatus
 
 
-def _generate_run_id(output_base: Path) -> str:
-    """生成唯一运行 ID，格式: YYYYMMDDHHmmss-NNN
+def _generate_run_id(target_dir: str) -> str:
+    """生成运行 ID，格式: YYYYMMDDHHmmss[-target_dir]
 
-    扫描 output_base 目录下当天已有的子目录名，计数器 +1。
-    例如当天第 1 次运行 → 20260624103000-001。
+    target_dir 为 "." 时不加后缀，如 20260624153000。
+    target_dir 为 "admin-test" 时加后缀，如 20260624153000-admin-test。
     """
     from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    prefix = now.strftime("%Y%m%d%H%M%S")
-
-    # 扫描当天已有目录，找出最大计数器
-    max_counter = 0
-    if output_base.exists():
-        for entry in output_base.iterdir():
-            if entry.is_dir() and entry.name.startswith(prefix):
-                try:
-                    counter = int(entry.name.split("-")[-1])
-                    max_counter = max(max_counter, counter)
-                except (ValueError, IndexError):
-                    pass
-
-    return f"{prefix}-{max_counter + 1:03d}"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    if target_dir and target_dir != ".":
+        return f"{timestamp}-{target_dir}"
+    return timestamp
 
 
 def cmd_start(args):
@@ -69,7 +58,7 @@ def cmd_start(args):
         sys.exit(0)
 
     # 生成 run_id 并存入状态
-    run_id = _generate_run_id(Path("review-output"))
+    run_id = _generate_run_id(args.target_dir)
     state.run_id = run_id
     state.target_dir = args.target_dir
     engine._save_state()
