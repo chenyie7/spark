@@ -2,6 +2,11 @@ import json
 import pytest
 from pathlib import Path
 
+# 符合 {timestamp}-{target_dir} 格式的示例 run_id，供所有测试统一引用
+SAMPLE_RUN_ID = "20260624103000-test"
+# target_dir="." 时的纯时间戳示例 run_id
+SAMPLE_RUN_ID_NO_TARGET = "20260624103000"
+
 SAMPLE_PIPELINE_YAML = """
 name: test-pipeline
 version: "1.0"

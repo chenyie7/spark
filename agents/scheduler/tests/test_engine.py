@@ -7,6 +7,7 @@ from pipeline_engine.engine import PipelineEngine
 from pipeline_engine.models import (
     PipelineStatus, NodeStatus, ActionType, NextAction,
 )
+from tests.conftest import SAMPLE_RUN_ID
 
 
 class TestPipelineEngineStart:
@@ -195,13 +196,13 @@ class TestPipelineEngineNext:
         engine.start("test")
         # Manually set run_id on state (simulating what CLI start does)
         engine._ensure_state()
-        engine.state.run_id = "20260624103000-001"
+        engine.state.run_id = SAMPLE_RUN_ID
         engine._save_state()
         engine.next()  # coder
         engine.report("coder", NodeStatus.SUCCESS, "ok")
         action = engine.next()  # reviewer
         assert action.nodes[0].node_id == "reviewer"
-        assert "20260624103000-001" in action.nodes[0].prompt
+        assert SAMPLE_RUN_ID in action.nodes[0].prompt
 
 
 class TestPipelineEngineReport:

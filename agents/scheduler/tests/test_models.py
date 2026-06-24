@@ -1,5 +1,7 @@
 # tests/test_models.py
 import pytest
+from tests.conftest import SAMPLE_RUN_ID
+
 from pipeline_engine.models import (
     TriggerType, NodeStatus, PipelineStatus, ActionType,
     PipelineDefaults, EdgeCondition, EdgeConfig, NodeConfig, PipelineConfig,
@@ -359,20 +361,20 @@ class TestPipelineState:
         assert obj.round == 1
 
     def test_run_id_present(self):
-        obj = PipelineState(pipeline_name="test", run_id="20260624103000-001")
-        assert obj.run_id == "20260624103000-001"
+        obj = PipelineState(pipeline_name="test", run_id=SAMPLE_RUN_ID)
+        assert obj.run_id == SAMPLE_RUN_ID
 
     def test_run_id_default(self):
         obj = PipelineState(pipeline_name="test")
         assert obj.run_id == ""
 
     def test_run_id_roundtrip(self):
-        obj = PipelineState(pipeline_name="test", run_id="20260624103000-001")
+        obj = PipelineState(pipeline_name="test", run_id=SAMPLE_RUN_ID)
         obj.start()
         d = obj.to_dict()
-        assert d["run_id"] == "20260624103000-001"
+        assert d["run_id"] == SAMPLE_RUN_ID
         restored = PipelineState.from_dict(d)
-        assert restored.run_id == "20260624103000-001"
+        assert restored.run_id == SAMPLE_RUN_ID
 
 
 class TestNodeToExecute:

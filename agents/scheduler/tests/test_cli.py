@@ -101,7 +101,9 @@ class TestCLIStart:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert "run_id" in data
-        assert len(data["run_id"]) == 18  # YYYYMMDDHHmmss-NNN
+        # run_id 格式: YYYYMMDDHHmmss[-target_dir]，长度 ≥ 14
+        assert len(data["run_id"]) >= 14
+        assert data["run_id"][:8].isdigit()  # 前 8 位是日期（YYYYMMDD）
 
     def test_start_no_pipeline(self, tmp_path: Path):
         state_file = tmp_path / "state.json"
