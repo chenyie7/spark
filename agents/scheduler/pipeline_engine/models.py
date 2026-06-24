@@ -296,7 +296,7 @@ class PipelineState:
     started_at: str = ""
     updated_at: str = ""
     run_id: str = ""
-    target_dir: str = "."   # 新增：模块根目录，相对于项目根
+    target_dir: str = "."   # 模块根目录，相对于项目根
 
     def _touch(self):
         """更新 updated_at 时间戳。"""
@@ -368,7 +368,7 @@ class PipelineState:
             started_at=d.get("started_at", ""),
             updated_at=d.get("updated_at", ""),
             run_id=d.get("run_id", ""),
-            target_dir=d.get("target_dir", "."),
+            target_dir=d.get("target_dir") if isinstance(d.get("target_dir"), str) else ".",
         )
 
     def to_dict(self) -> dict:
