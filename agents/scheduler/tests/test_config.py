@@ -35,7 +35,7 @@ class TestLoadPipeline:
 
 class TestLoadPipelineErrors:
     def test_file_not_found(self):
-        with pytest.raises(ConfigLoadError, match="not found"):
+        with pytest.raises(ConfigLoadError, match="不存在"):
             load_pipeline(Path("/nonexistent/pipeline.yaml"))
 
     def test_empty_file(self, tmp_path: Path):
@@ -75,7 +75,7 @@ edges:
     trigger: on_success
     description: ""
 """)
-        with pytest.raises(ConfigLoadError, match="unknown node"):
+        with pytest.raises(ConfigLoadError, match="未知节点"):
             load_pipeline(p)
 
     def test_no_start_nodes(self, tmp_path: Path):
@@ -106,5 +106,5 @@ edges:
     trigger: on_success
     description: ""
 """)
-        with pytest.raises(ConfigLoadError, match="start"):
+        with pytest.raises(ConfigLoadError, match="起始节点"):
             load_pipeline(p)

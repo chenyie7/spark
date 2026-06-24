@@ -102,7 +102,7 @@ class TestPipelineDefaults:
         assert obj.block_on == ["P0"]
 
     def test_from_dict_invalid_type(self):
-        with pytest.raises(ValueError, match="must be a dict"):
+        with pytest.raises(ValueError, match="必须是 dict"):
             PipelineDefaults.from_dict("not-a-dict")
 
 
@@ -112,7 +112,7 @@ class TestEdgeCondition:
         assert obj.status == "REVIEW_FAILED"
 
     def test_from_dict_missing_status(self):
-        with pytest.raises(ValueError, match="condition.status is required"):
+        with pytest.raises(ValueError, match="必填"):
             EdgeCondition.from_dict({})
 
     def test_to_dict(self):
@@ -121,7 +121,7 @@ class TestEdgeCondition:
         assert d == {"status": "REVIEW_FAILED"}
 
     def test_from_dict_invalid_type(self):
-        with pytest.raises(ValueError, match="must be a dict"):
+        with pytest.raises(ValueError, match="必须是 dict"):
             EdgeCondition.from_dict("not-a-dict")
 
 
@@ -151,7 +151,7 @@ class TestEdgeConfig:
             EdgeConfig.from_dict(d)
 
     def test_from_dict_invalid_type(self):
-        with pytest.raises(ValueError, match="must be a dict"):
+        with pytest.raises(ValueError, match="必须是 dict"):
             EdgeConfig.from_dict("not-a-dict")
 
 
@@ -183,17 +183,17 @@ class TestNodeConfig:
     def test_from_dict_missing_id(self):
         d = {"type": "agent", "agent": "checker", "description": "x",
              "prompt_template": "Check."}
-        with pytest.raises(ValueError, match="node.id is required"):
+        with pytest.raises(ValueError, match="必填"):
             NodeConfig.from_dict(d)
 
     def test_from_dict_missing_prompt_template(self):
         d = {"id": "checker", "type": "agent", "agent": "checker",
              "description": "x"}
-        with pytest.raises(ValueError, match="node.prompt_template is required"):
+        with pytest.raises(ValueError, match="必填"):
             NodeConfig.from_dict(d)
 
     def test_from_dict_invalid_type(self):
-        with pytest.raises(ValueError, match="must be a dict"):
+        with pytest.raises(ValueError, match="必须是 dict"):
             NodeConfig.from_dict("not-a-dict")
 
 
@@ -214,7 +214,7 @@ class TestPipelineConfig:
 
     def test_get_node_missing(self, sample_pipeline_dict):
         obj = PipelineConfig.from_dict(sample_pipeline_dict)
-        with pytest.raises(ValueError, match="Node 'nonexistent' not found"):
+        with pytest.raises(ValueError, match="不存在"):
             obj.get_node("nonexistent")
 
     def test_get_outgoing_edges(self, sample_pipeline_dict):
@@ -252,11 +252,11 @@ class TestPipelineConfigValidation:
     def test_missing_name(self):
         d = {"version": "1", "description": "d",
              "defaults": {}, "nodes": [], "edges": []}
-        with pytest.raises(ValueError, match="pipeline.name is required"):
+        with pytest.raises(ValueError, match="必填"):
             PipelineConfig.from_dict(d)
 
     def test_from_dict_invalid_type(self):
-        with pytest.raises(ValueError, match="must be a dict"):
+        with pytest.raises(ValueError, match="必须是 dict"):
             PipelineConfig.from_dict([1, 2, 3])
 
 

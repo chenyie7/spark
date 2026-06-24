@@ -22,7 +22,7 @@ class TestPipelineEngineStart:
         config = load_pipeline(sample_pipeline_path)
         engine = PipelineEngine(config, state_path)
         engine.start("first")
-        with pytest.raises(RuntimeError, match="already running"):
+        with pytest.raises(RuntimeError, match="已在运行"):
             engine.start("second")
 
 
@@ -47,7 +47,7 @@ class TestPipelineEngineNext:
         # coder not reported yet — still in progress
         action = engine.next()
         assert action.action == ActionType.ERROR
-        assert "in progress" in action.message.lower()
+        assert "仍在执行中" in action.message
 
     def test_after_coder_success_next_returns_reviewer(self, sample_pipeline_path: Path, state_path: Path):
         config = load_pipeline(sample_pipeline_path)
@@ -70,7 +70,7 @@ class TestPipelineEngineNext:
         engine.report("reviewer", NodeStatus.SUCCESS, "all good", agent_verdict="REVIEW_PASSED")
         action = engine.next()
         assert action.action == ActionType.DONE
-        assert "completed" in action.message.lower()
+        assert "成功完成" in action.message
 
     def test_reviewer_failed_triggers_fix_loop(self, sample_pipeline_path: Path, state_path: Path):
         config = load_pipeline(sample_pipeline_path)
@@ -103,7 +103,7 @@ class TestPipelineEngineNext:
         # After 3rd FAILED, max_retries exhausted
         action = engine.next()
         assert action.action == ActionType.DONE
-        assert "max" in action.message.lower() or "retries" in action.message.lower()
+        assert "最大重试" in action.message
 
     def test_reviewer_error_terminates(self, sample_pipeline_path: Path, state_path: Path):
         config = load_pipeline(sample_pipeline_path)
@@ -115,8 +115,7 @@ class TestPipelineEngineNext:
         engine.report("reviewer", NodeStatus.ERROR, "python3 not available", agent_verdict="REVIEW_ERROR")
         action = engine.next()
         assert action.action == ActionType.DONE
-        assert "error" in action.message.lower()
-
+        assert "错误" in action.message
     # ── Non-reviewer node failure tests (C1) ─────────────────────────
 
     def test_coder_error_returns_error_not_success(self, sample_pipeline_path: Path, state_path: Path):
@@ -128,8 +127,8 @@ class TestPipelineEngineNext:
         engine.report("coder", NodeStatus.ERROR, "process crashed")
         action = engine.next()
         assert action.action == ActionType.ERROR
-        assert "failed" in action.message.lower()
-        assert "successfully" not in action.message.lower()
+        assert "失败" in action.message
+        assert "成功" not in action.message
 
     def test_coder_failed_returns_error_not_success(self, sample_pipeline_path: Path, state_path: Path):
         """Coder returns FAILED -> pipeline should ERROR, not claim success."""
@@ -140,8 +139,8 @@ class TestPipelineEngineNext:
         engine.report("coder", NodeStatus.FAILED, "build failed")
         action = engine.next()
         assert action.action == ActionType.ERROR
-        assert "failed" in action.message.lower()
-        assert "successfully" not in action.message.lower()
+        assert "失败" in action.message
+        assert "成功" not in action.message
 
     def test_reviewer_failed_empty_verdict_returns_error(self, sample_pipeline_path: Path, state_path: Path):
         """Reviewer returns FAILED status with empty verdict -> pipeline should ERROR."""
@@ -154,8 +153,8 @@ class TestPipelineEngineNext:
         engine.report("reviewer", NodeStatus.FAILED, "crashed without verdict", agent_verdict="")
         action = engine.next()
         assert action.action == ActionType.ERROR
-        assert "failed" in action.message.lower()
-        assert "successfully" not in action.message.lower()
+        assert "失败" in action.message
+        assert "成功" not in action.message
 
 
 class TestPipelineEngineReport:
@@ -172,7 +171,7 @@ class TestPipelineEngineReport:
         config = load_pipeline(sample_pipeline_path)
         engine = PipelineEngine(config, state_path)
         engine.start("test")
-        with pytest.raises(ValueError, match="not in current_nodes"):
+        with pytest.raises(ValueError, match="不在 current_nodes"):
             engine.report("reviewer", NodeStatus.SUCCESS, "?")
 
     def test_double_report_raises(self, sample_pipeline_path: Path, state_path: Path):
@@ -182,7 +181,7 @@ class TestPipelineEngineReport:
         engine.start("test")
         engine.next()  # sets current_nodes=["coder"]
         engine.report("coder", NodeStatus.SUCCESS, "first report")
-        with pytest.raises(ValueError, match="already been reported"):
+        with pytest.raises(ValueError, match="已上报过"):
             engine.report("coder", NodeStatus.SUCCESS, "duplicate report")
 
 

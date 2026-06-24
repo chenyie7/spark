@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""pipeline-engine CLI — DAG-based workflow scheduler entry point.
+"""pipeline-engine CLI — 基于 DAG 的工作流调度器入口。
 
-Commands:
-  start   — Initialize pipeline state from pipeline.yaml
-  next    — Get next node(s) to execute
-  report  — Record node execution result
-  status  — Show current pipeline state
-  reset   — Clear pipeline state
+命令：
+  start   — 从 pipeline.yaml 初始化流水线状态
+  next    — 获取下一个要执行的节点
+  report  — 记录节点执行结果
+  status  — 显示当前流水线状态
+  reset   — 清除流水线状态
 """
 
 import argparse
@@ -20,7 +20,7 @@ from pipeline_engine.models import NodeStatus
 
 
 def cmd_start(args):
-    """Initialize pipeline state."""
+    """初始化流水线状态。"""
     pipeline_path = Path(args.pipeline)
     state_path = Path(args.state_file)
 
@@ -34,7 +34,7 @@ def cmd_start(args):
     try:
         state = engine.start(args.requirement)
     except RuntimeError as e:
-        # Pipeline already running — return current state info
+        # 流水线已在运行 → 返回当前状态信息
         existing = engine.status()
         print(json.dumps({
             "status": "already_running",
@@ -49,19 +49,19 @@ def cmd_start(args):
         "pipeline_name": state.pipeline_name,
         "round": 0,
         "max_retries": config.defaults.max_retries,
-        "message": f"Pipeline '{config.name}' started.",
+        "message": f"流水线 '{config.name}' 已启动。",
     }))
 
 
 def cmd_next(args):
-    """Get next node(s) to execute."""
+    """获取下一个要执行的节点。"""
     state_path = Path(args.state_file)
 
     if not state_path.exists():
         print(json.dumps({
             "action": "error",
             "nodes": [],
-            "message": "No pipeline state found. Run 'start' first.",
+            "message": "未找到流水线状态。请先运行 'start'。",
         }))
         sys.exit(0)
 
@@ -72,7 +72,7 @@ def cmd_next(args):
         print(json.dumps({
             "action": "error",
             "nodes": [],
-            "message": f"Failed to load pipeline config: {e}",
+            "message": f"加载流水线配置失败: {e}",
         }))
         sys.exit(1)
 
@@ -91,7 +91,7 @@ def cmd_next(args):
 
 
 def cmd_report(args):
-    """Record node execution result."""
+    """记录节点执行结果。"""
     state_path = Path(args.state_file)
     pipeline_path = Path(args.pipeline)
 
@@ -123,11 +123,11 @@ def cmd_report(args):
 
 
 def cmd_status(args):
-    """Show current pipeline state."""
+    """显示当前流水线状态。"""
     state_path = Path(args.state_file)
 
     if not state_path.exists():
-        print(json.dumps({"error": "No pipeline state found."}))
+        print(json.dumps({"error": "未找到流水线状态。"}))
         sys.exit(0)
 
     with open(state_path, "r", encoding="utf-8") as f:
@@ -137,58 +137,58 @@ def cmd_status(args):
 
 
 def cmd_reset(args):
-    """Clear pipeline state."""
+    """清除流水线状态。"""
     state_path = Path(args.state_file)
 
     if state_path.exists():
         state_path.unlink()
-        print(json.dumps({"status": "reset", "message": "State cleared."}))
+        print(json.dumps({"status": "reset", "message": "状态已清除。"}))
     else:
-        print(json.dumps({"status": "reset", "message": "No state file to clear."}))
+        print(json.dumps({"status": "reset", "message": "没有需要清除的状态文件。"}))
 
 
 def main():
     parser = argparse.ArgumentParser(
         prog="pipeline-engine",
-        description="DAG-based workflow scheduler for code generation pipelines",
+        description="基于 DAG 的工作流调度器，用于代码生成流水线",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # ── start ──
-    p_start = sub.add_parser("start", help="Initialize a new pipeline run")
-    p_start.add_argument("--pipeline", required=True, help="Path to pipeline.yaml")
+    p_start = sub.add_parser("start", help="初始化新的流水线运行")
+    p_start.add_argument("--pipeline", required=True, help="pipeline.yaml 的路径")
     p_start.add_argument("--state-file", default="review-output/pipeline-state.json",
-                         help="Path to state file")
-    p_start.add_argument("--requirement", required=True, help="User requirement description")
+                         help="状态文件路径")
+    p_start.add_argument("--requirement", required=True, help="用户需求描述")
 
     # ── next ──
-    p_next = sub.add_parser("next", help="Get next node(s) to execute")
-    p_next.add_argument("--pipeline", default="pipeline.yaml", help="Path to pipeline.yaml")
+    p_next = sub.add_parser("next", help="获取下一个要执行的节点")
+    p_next.add_argument("--pipeline", default="pipeline.yaml", help="pipeline.yaml 的路径")
     p_next.add_argument("--state-file", default="review-output/pipeline-state.json",
-                        help="Path to state file")
+                        help="状态文件路径")
 
     # ── report ──
-    p_report = sub.add_parser("report", help="Record node execution result")
-    p_report.add_argument("--pipeline", default="pipeline.yaml", help="Path to pipeline.yaml")
+    p_report = sub.add_parser("report", help="记录节点执行结果")
+    p_report.add_argument("--pipeline", default="pipeline.yaml", help="pipeline.yaml 的路径")
     p_report.add_argument("--state-file", default="review-output/pipeline-state.json",
-                          help="Path to state file")
-    p_report.add_argument("--node", required=True, help="Node ID that completed")
+                          help="状态文件路径")
+    p_report.add_argument("--node", required=True, help="已完成的节点 ID")
     p_report.add_argument("--status", required=True,
                           choices=["success", "failed", "error", "skipped"],
-                          help="Execution status")
-    p_report.add_argument("--summary", default="", help="Human-readable summary")
+                          help="执行状态")
+    p_report.add_argument("--summary", default="", help="人类可读的摘要")
     p_report.add_argument("--verdict", default="",
-                          help="Agent verdict (REVIEW_PASSED/REVIEW_FAILED/REVIEW_ERROR)")
+                          help="Agent 判定（REVIEW_PASSED/REVIEW_FAILED/REVIEW_ERROR）")
 
     # ── status ──
-    p_status = sub.add_parser("status", help="Show current pipeline state")
+    p_status = sub.add_parser("status", help="显示当前流水线状态")
     p_status.add_argument("--state-file", default="review-output/pipeline-state.json",
-                          help="Path to state file")
+                          help="状态文件路径")
 
     # ── reset ──
-    p_reset = sub.add_parser("reset", help="Clear pipeline state")
+    p_reset = sub.add_parser("reset", help="清除流水线状态")
     p_reset.add_argument("--state-file", default="review-output/pipeline-state.json",
-                          help="Path to state file")
+                          help="状态文件路径")
 
     args = parser.parse_args()
     if args.command == "start":

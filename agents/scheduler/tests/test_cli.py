@@ -118,7 +118,7 @@ class TestCLINext:
         result = run_cli(["next", "--state-file", str(tmp_path / "no-state.json")], cwd=tmp_path)
         data = json.loads(result.stdout)
         assert data["action"] == "error"
-        assert "No pipeline state" in data["message"]
+        assert "未找到流水线状态" in data["message"]
 
 
 class TestCLIReport:

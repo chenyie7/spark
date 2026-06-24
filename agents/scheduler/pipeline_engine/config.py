@@ -1,10 +1,10 @@
-"""Configuration loader -- reads pipeline.yaml into typed PipelineConfig with strict validation.
+"""配置加载器 — 读取 pipeline.yaml 并反序列化为严格校验后的 PipelineConfig。
 
-Follows the Spring Boot @ConfigurationProperties pattern:
-1. Load YAML with PyYAML
-2. Deserialize into typed dataclass tree via from_dict()
-3. Run semantic validations (edge references, DAG integrity, etc.)
-4. Return immutable PipelineConfig or raise ConfigLoadError with precise message
+遵循 Spring Boot @ConfigurationProperties 模式：
+1. 使用 PyYAML 加载 YAML
+2. 通过 from_dict() 反序列化为类型化 dataclass 树
+3. 执行语义校验（边引用、DAG 完整性等）
+4. 返回 PipelineConfig，或抛出带精确错误信息的 ConfigLoadError
 """
 
 from pathlib import Path
@@ -17,54 +17,53 @@ except ImportError:
 
 
 class ConfigLoadError(Exception):
-    """Raised when a pipeline.yaml cannot be loaded or fails validation."""
+    """pipeline.yaml 无法加载或校验失败时抛出。"""
     pass
 
 
 def load_pipeline(pipeline_path: Path) -> PipelineConfig:
-    """Load and strictly validate a pipeline.yaml file.
+    """加载并严格校验 pipeline.yaml 文件。
 
     Args:
-        pipeline_path: Path to the pipeline YAML file.
+        pipeline_path: pipeline YAML 文件的路径。
 
     Returns:
-        A fully validated PipelineConfig instance.
+        经过完整校验的 PipelineConfig 实例。
 
     Raises:
-        ConfigLoadError: If the file is missing, invalid YAML, missing required
-                         fields, or contains semantic errors (e.g. edge references
-                         to non-existent nodes).
+        ConfigLoadError: 文件缺失、YAML 无效、必填字段缺失、或语义错误
+                         （如边引用了不存在的节点）。
     """
     if yaml is None:
         raise ConfigLoadError(
-            "PyYAML is required. Install with: pip3 install pyyaml"
+            "需要 PyYAML。安装命令：pip3 install pyyaml"
         )
 
     if not pipeline_path.exists():
-        raise ConfigLoadError(f"Pipeline file not found: {pipeline_path}")
+        raise ConfigLoadError(f"流水线文件不存在: {pipeline_path}")
 
-    # -- Phase 1: Parse YAML --------------------------------------------------
+    # ── 阶段 1：解析 YAML ────────────────────────────────────────────
     try:
         with open(pipeline_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise ConfigLoadError(f"Failed to parse YAML in {pipeline_path}: {e}")
+        raise ConfigLoadError(f"解析 YAML 失败 {pipeline_path}: {e}")
 
     if data is None:
-        raise ConfigLoadError(f"Pipeline file is empty: {pipeline_path}")
+        raise ConfigLoadError(f"流水线文件为空: {pipeline_path}")
 
     if not isinstance(data, dict):
         raise ConfigLoadError(
-            f"Pipeline YAML must be a mapping, got {type(data).__name__}"
+            f"流水线 YAML 必须是映射类型，实际为 {type(data).__name__}"
         )
 
-    # -- Phase 2: Deserialize to typed tree -----------------------------------
+    # ── 阶段 2：反序列化为类型化树 ───────────────────────────────────
     try:
         config = PipelineConfig.from_dict(data)
     except (ValueError, KeyError) as e:
-        raise ConfigLoadError(f"Invalid pipeline config in {pipeline_path}: {e}")
+        raise ConfigLoadError(f"流水线配置无效 {pipeline_path}: {e}")
 
-    # -- Phase 3: Semantic validation -----------------------------------------
+    # ── 阶段 3：语义校验 ─────────────────────────────────────────────
     _validate_edges(config)
     _validate_start_nodes(config)
 
@@ -72,25 +71,25 @@ def load_pipeline(pipeline_path: Path) -> PipelineConfig:
 
 
 def _validate_edges(config: PipelineConfig) -> None:
-    """Ensure all edge 'from' and 'to' (non-DONE) nodes exist."""
+    """确保所有边的 'from' 和 'to'（非 DONE）引用了存在的节点。"""
     node_ids = {n.id for n in config.nodes}
     for edge in config.edges:
         if edge.from_node not in node_ids:
             raise ConfigLoadError(
-                f"Edge references unknown node '{edge.from_node}' in 'from' field. "
-                f"Available nodes: {sorted(node_ids)}"
+                f"边引用了未知节点 '{edge.from_node}'（在 'from' 字段中）。"
+                f"可用节点: {sorted(node_ids)}"
             )
         if edge.to != "DONE" and edge.to not in node_ids:
             raise ConfigLoadError(
-                f"Edge references unknown node '{edge.to}' in 'to' field. "
-                f"Available nodes: {sorted(node_ids)}"
+                f"边引用了未知节点 '{edge.to}'（在 'to' 字段中）。"
+                f"可用节点: {sorted(node_ids)}"
             )
 
 
 def _validate_start_nodes(config: PipelineConfig) -> None:
-    """Ensure there is at least one start node (in-degree = 0)."""
+    """确保至少存在一个起始节点（入度为 0）。"""
     start_nodes = config.get_start_nodes()
     if not start_nodes:
         raise ConfigLoadError(
-            "No start nodes found. At least one node must have no incoming edges."
+            "未找到起始节点。至少需要一个节点没有入边。"
         )

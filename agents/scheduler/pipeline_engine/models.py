@@ -1,27 +1,27 @@
-"""Data models for pipeline-engine — typed bindings for pipeline.yaml and runtime state.
+"""pipeline-engine 数据模型 — pipeline.yaml 的类型化绑定和运行时状态实体。
 
-All model classes follow the Spring Boot @ConfigurationProperties pattern:
-YAML structure → strict dataclass tree → from_dict() factory with validation.
+所有模型类遵循 Spring Boot @ConfigurationProperties 模式：
+YAML 结构 → 严格 dataclass 树 → from_dict() 工厂方法带校验。
 """
 
-# Imports required by the model classes in this module.
+# 本模块所需的导入。
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
 from typing import Optional
 
 
-# ── Enums ──────────────────────────────────────────────────────────
+# ── 枚举 ────────────────────────────────────────────────────────────
 
 
 class TriggerType(str, Enum):
-    """Edge trigger type."""
+    """边的触发类型。"""
     ON_SUCCESS = "on_success"
     ON_CONDITION = "on_condition"
 
 
 class NodeStatus(str, Enum):
-    """Execution status of a single node."""
+    """单个节点的执行状态。"""
     SUCCESS = "success"
     FAILED = "failed"
     ERROR = "error"
@@ -29,7 +29,7 @@ class NodeStatus(str, Enum):
 
 
 class PipelineStatus(str, Enum):
-    """Overall pipeline lifecycle status."""
+    """流水线整体生命周期状态。"""
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -37,18 +37,18 @@ class PipelineStatus(str, Enum):
 
 
 class ActionType(str, Enum):
-    """Action type returned by the `next` command."""
+    """`next` 命令返回的动作类型。"""
     EXECUTE = "execute"
     DONE = "done"
     ERROR = "error"
 
 
-# ── Pipeline Configuration Entities ─────────────────────────────────
+# ── 流水线配置实体 ──────────────────────────────────────────────────
 
 
 @dataclass
 class PipelineDefaults:
-    """Global default values for all nodes. Maps to pipeline.yaml ``defaults``."""
+    """全局默认值，对应 pipeline.yaml 中的 ``defaults`` 节点。"""
     timeout: str = "600s"
     max_retries: int = 3
     block_on: list[str] = field(default_factory=lambda: ["P0"])
@@ -56,7 +56,7 @@ class PipelineDefaults:
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineDefaults":
         if not isinstance(d, dict):
-            raise ValueError(f"defaults must be a dict, got {type(d).__name__}")
+            raise ValueError(f"defaults 必须是 dict，实际类型为 {type(d).__name__}")
         return cls(
             timeout=d.get("timeout", "600s"),
             max_retries=d.get("max_retries", 3),
@@ -73,15 +73,15 @@ class PipelineDefaults:
 
 @dataclass
 class EdgeCondition:
-    """Condition for ``on_condition`` trigger edges."""
+    """条件边的触发条件，用于 ``on_condition`` 触发器。"""
     status: str  # REVIEW_PASSED | REVIEW_FAILED | REVIEW_ERROR
 
     @classmethod
     def from_dict(cls, d: dict) -> "EdgeCondition":
         if not isinstance(d, dict):
-            raise ValueError(f"condition must be a dict, got {type(d).__name__}")
+            raise ValueError(f"condition 必须是 dict，实际类型为 {type(d).__name__}")
         if "status" not in d:
-            raise ValueError("condition.status is required")
+            raise ValueError("condition.status 为必填字段")
         return cls(status=d["status"])
 
     def to_dict(self) -> dict:
@@ -90,8 +90,8 @@ class EdgeCondition:
 
 @dataclass
 class EdgeConfig:
-    """A single DAG edge. Maps to an item in pipeline.yaml ``edges`` list."""
-    from_node: str      # YAML key "from" — renamed because "from" is a Python keyword
+    """单条 DAG 边，对应 pipeline.yaml ``edges`` 列表中的一项。"""
+    from_node: str      # YAML 键为 "from"——因 Python 关键字冲突重命名为 from_node
     to: str
     trigger: TriggerType
     condition: Optional[EdgeCondition] = None
@@ -100,10 +100,10 @@ class EdgeConfig:
     @classmethod
     def from_dict(cls, d: dict) -> "EdgeConfig":
         if not isinstance(d, dict):
-            raise ValueError(f"edge must be a dict, got {type(d).__name__}")
+            raise ValueError(f"edge 必须是 dict，实际类型为 {type(d).__name__}")
         for req in ("from", "to", "trigger"):
             if req not in d:
-                raise ValueError(f"edge.{req} is required")
+                raise ValueError(f"edge.{req} 为必填字段")
         condition = None
         if "condition" in d and d["condition"] is not None:
             condition = EdgeCondition.from_dict(d["condition"])
@@ -130,7 +130,7 @@ class EdgeConfig:
 
 @dataclass
 class NodeConfig:
-    """A single DAG node. Maps to an item in pipeline.yaml ``nodes`` list."""
+    """单个 DAG 节点，对应 pipeline.yaml ``nodes`` 列表中的一项。"""
     id: str
     type: str              # "agent"
     agent: str
@@ -144,10 +144,10 @@ class NodeConfig:
     @classmethod
     def from_dict(cls, d: dict) -> "NodeConfig":
         if not isinstance(d, dict):
-            raise ValueError(f"node must be a dict, got {type(d).__name__}")
+            raise ValueError(f"node 必须是 dict，实际类型为 {type(d).__name__}")
         for req in ("id", "type", "agent", "description", "prompt_template"):
             if req not in d:
-                raise ValueError(f"node.{req} is required")
+                raise ValueError(f"node.{req} 为必填字段")
         return cls(
             id=d["id"],
             type=d["type"],
@@ -181,7 +181,7 @@ class NodeConfig:
 
 @dataclass
 class PipelineConfig:
-    """Root configuration entity. Maps to the entire pipeline.yaml file."""
+    """根配置实体，对应整个 pipeline.yaml 文件。"""
     name: str
     version: str
     description: str
@@ -192,14 +192,14 @@ class PipelineConfig:
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineConfig":
         if not isinstance(d, dict):
-            raise ValueError(f"pipeline config must be a dict, got {type(d).__name__}")
+            raise ValueError(f"pipeline 配置必须是 dict，实际类型为 {type(d).__name__}")
         for req in ("name", "version", "description"):
             if req not in d:
-                raise ValueError(f"pipeline.{req} is required")
+                raise ValueError(f"pipeline.{req} 为必填字段")
         if "nodes" not in d or not isinstance(d["nodes"], list):
-            raise ValueError("pipeline.nodes is required and must be a list")
+            raise ValueError("pipeline.nodes 为必填字段且必须是 list")
         if "edges" not in d or not isinstance(d["edges"], list):
-            raise ValueError("pipeline.edges is required and must be a list")
+            raise ValueError("pipeline.edges 为必填字段且必须是 list")
         defaults = PipelineDefaults.from_dict(d.get("defaults", {}))
         nodes = [NodeConfig.from_dict(n) for n in d["nodes"]]
         edges = [EdgeConfig.from_dict(e) for e in d["edges"]]
@@ -223,29 +223,30 @@ class PipelineConfig:
         }
 
     def get_node(self, node_id: str) -> NodeConfig:
+        """按 ID 查找节点，找不到则抛出 ValueError。"""
         for n in self.nodes:
             if n.id == node_id:
                 return n
-        raise ValueError(f"Node '{node_id}' not found in pipeline '{self.name}'")
+        raise ValueError(f"节点 '{node_id}' 在流水线 '{self.name}' 中不存在")
 
     def get_outgoing_edges(self, node_id: str) -> list[EdgeConfig]:
+        """获取指定节点的所有出边。"""
         return [e for e in self.edges if e.from_node == node_id]
 
     def get_start_nodes(self) -> list[NodeConfig]:
-        """Nodes with zero incoming ``on_success`` edges (no forward dependency)."""
-        # Only on_success edges count as forward dependencies; on_condition edges
-        # are feedback loops (e.g. review FAILED -> coder) and should not block
-        # a node from being considered a start node.
+        """获取入度为 0 的起始节点（仅 ``on_success`` 边计入前向依赖）。"""
+        # 仅 on_success 边算作前向依赖；on_condition 边是反馈回路
+        #（例如 reviewer FAILED → coder），不应阻止节点成为起始节点。
         has_incoming = {e.to for e in self.edges if e.trigger == TriggerType.ON_SUCCESS}
         return [n for n in self.nodes if n.id not in has_incoming]
 
 
-# ── Runtime State Entities ─────────────────────────────────────────
+# ── 运行时状态实体 ──────────────────────────────────────────────────
 
 
 @dataclass
 class NodeResult:
-    """Record of a single node execution."""
+    """单个节点的执行结果记录。"""
     node_id: str
     status: NodeStatus
     summary: str = ""
@@ -254,13 +255,14 @@ class NodeResult:
     timestamp: str = ""
 
     def __post_init__(self):
+        """初始化后自动生成时间戳（如果未提供）。"""
         if not self.timestamp:
             self.timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     @classmethod
     def from_dict(cls, d: dict) -> "NodeResult":
         if not isinstance(d, dict):
-            raise ValueError(f"node_result must be a dict, got {type(d).__name__}")
+            raise ValueError(f"node_result 必须是 dict，实际类型为 {type(d).__name__}")
         return cls(
             node_id=d.get("node_id", ""),
             status=NodeStatus(d.get("status", "skipped")),
@@ -283,7 +285,7 @@ class NodeResult:
 
 @dataclass
 class PipelineState:
-    """Persistent runtime state stored in pipeline-state.json."""
+    """持久化运行时状态，保存在 pipeline-state.json 中。"""
     pipeline_name: str
     status: PipelineStatus = PipelineStatus.PENDING
     round: int = 0
@@ -295,28 +297,34 @@ class PipelineState:
     updated_at: str = ""
 
     def _touch(self):
+        """更新 updated_at 时间戳。"""
         self.updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def start(self):
+        """将流水线标记为运行中，记录开始时间。"""
         self.status = PipelineStatus.RUNNING
         self.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._touch()
 
     def complete(self):
+        """将流水线标记为已完成。"""
         self.status = PipelineStatus.COMPLETED
         self.current_nodes = []
         self._touch()
 
     def error(self):
+        """将流水线标记为错误状态。"""
         self.status = PipelineStatus.ERROR
         self.current_nodes = []
         self._touch()
 
     def set_current_nodes(self, node_ids: list[str]):
+        """设置当前待执行的节点列表。"""
         self.current_nodes = node_ids
         self._touch()
 
     def record_result(self, result: NodeResult):
+        """记录一个节点的执行结果，追加到历史记录。"""
         self.node_results[result.node_id] = result
         self.history.append({
             "round": self.round,
@@ -329,17 +337,19 @@ class PipelineState:
         self._touch()
 
     def clear_current_nodes(self):
+        """清空当前待执行节点列表。"""
         self.current_nodes = []
         self._touch()
 
     def increment_round(self):
+        """轮次 +1（用于修复循环）。"""
         self.round += 1
         self._touch()
 
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineState":
         if not isinstance(d, dict):
-            raise ValueError(f"pipeline_state must be a dict, got {type(d).__name__}")
+            raise ValueError(f"pipeline_state 必须是 dict，实际类型为 {type(d).__name__}")
         node_results = {}
         for k, v in d.get("node_results", {}).items():
             node_results[k] = NodeResult.from_dict(v)
@@ -369,15 +379,15 @@ class PipelineState:
         }
 
 
-# ── CLI Response Entities ──────────────────────────────────────────
+# ── CLI 响应实体 ────────────────────────────────────────────────────
 
 
 @dataclass
 class NodeToExecute:
-    """A single node returned by the `next` command for execution."""
+    """`next` 命令返回的单个待执行节点。"""
     node_id: str
     agent_type: str
-    prompt: str          # fully rendered prompt
+    prompt: str          # 已渲染完整的 prompt
     timeout: str
     round: int
     phase: str           # "code_generation" | "review" | "fix"
@@ -395,7 +405,7 @@ class NodeToExecute:
 
 @dataclass
 class NextAction:
-    """Return value of the `next` command."""
+    """`next` 命令的返回值。"""
     action: ActionType
     nodes: list[NodeToExecute] = field(default_factory=list)
     message: str = ""
