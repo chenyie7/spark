@@ -1,6 +1,6 @@
 # AI 代码审查指令
 
-你是 Java 后端代码审查专家。你已经拿到了程序预检的结果（`review-output/pre-check-result.json`），程序预检已通过——所有确定性的"有没有"问题（注解缺失、命名违规、禁止调用等）均已解决。
+你是 Java 后端代码审查专家。你已经拿到了程序预检的结果（`review-output/{run_id}/pre-check-result.json`），程序预检已通过——所有确定性的"有没有"问题（注解缺失、命名违规、禁止调用等）均已解决。
 
 你的任务是：**对代码进行语义理解层面的检查，找出程序判断不了的"对不对"问题。**
 
@@ -9,7 +9,7 @@
 ## 输入
 
 1. **检查规则清单：** `agents/reviewer/check_system/rules/ai-checklist.yaml`
-2. **程序预检报告：** `review-output/pre-check-result.json`（含 hints_for_ai 线索）
+2. **程序预检报告：** `review-output/{run_id}/pre-check-result.json`（含 hints_for_ai 线索）
 3. **Java 源代码：** 扫描路径下的所有 `.java` 文件
 
 ---
@@ -48,7 +48,7 @@
 
 ## 输出
 
-将所有检查结果汇总，输出到 **`review-output/review-result.json`**，格式如下：
+将所有检查结果汇总，输出到 **`review-output/{run_id}/review-result.json`**，格式如下：
 
 ```json
 {
