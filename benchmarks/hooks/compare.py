@@ -25,6 +25,105 @@ def load_all_benchmarks(bench_dir: str) -> list[dict]:
     return results
 
 
+def _compute_baselines(runs: list[dict]) -> dict:
+    """从所有历史运行计算基线（均值 + 标准差）。"""
+    import statistics
+
+    p0_values = []
+    token_values = []
+    rounds_values = []
+    cache_values = []
+
+    for r in runs:
+        summary = r.get("summary", {})
+        conv = r.get("convergence", {})
+        series = conv.get("series", [])
+
+        if series:
+            p0_values.append(series[0].get("P0", 0))
+
+        token_values.append(summary.get("total_tokens", 0))
+        rounds_values.append(len(r.get("rounds", [])))
+
+        ce = summary.get("cache_efficiency", {})
+        cache_values.append(ce.get("cache_hit_ratio", 0))
+
+    def safe_stats(values):
+        if len(values) < 2:
+            return sum(values) / len(values) if values else 0, 0
+        return statistics.mean(values), statistics.stdev(values)
+
+    avg_p0, p0_std = safe_stats(p0_values)
+    avg_tokens, tokens_std = safe_stats(token_values)
+    avg_rounds, rounds_std = safe_stats(rounds_values)
+    avg_cache, cache_std = safe_stats(cache_values)
+
+    return {
+        "avg_p0": round(avg_p0, 1), "p0_std": round(p0_std, 1),
+        "avg_tokens": int(avg_tokens), "tokens_std": int(tokens_std),
+        "avg_rounds": round(avg_rounds, 1), "rounds_std": round(rounds_std, 1),
+        "avg_cache_hit": round(avg_cache, 3), "cache_std": round(cache_std, 3),
+        "sample_count": len(runs),
+    }
+
+
+def _detect_anomalies(runs: list[dict], baselines: dict) -> list[dict]:
+    """检测当前运行是否偏离基线超过 2σ。"""
+    alerts_per_run = []
+
+    for r in runs:
+        meta = r.get("meta", {})
+        summary = r.get("summary", {})
+        conv = r.get("convergence", {})
+        ce = summary.get("cache_efficiency", {})
+        series = conv.get("series", [])
+
+        alerts = []
+
+        # Token 检查
+        if baselines.get("tokens_std", 0) > 0:
+            tokens = summary.get("total_tokens", 0)
+            dev = (tokens - baselines["avg_tokens"]) / baselines["tokens_std"]
+            if abs(dev) > 2:
+                alerts.append({
+                    "metric": "tokens", "current": tokens,
+                    "baseline": baselines["avg_tokens"],
+                    "deviation": round(dev, 2),
+                    "severity": "critical" if abs(dev) > 3 else "warning",
+                })
+
+        # P0 检查
+        if baselines.get("p0_std", 0) > 0 and series:
+            p0 = series[0].get("P0", 0)
+            dev = (p0 - baselines["avg_p0"]) / baselines["p0_std"]
+            if abs(dev) > 2:
+                alerts.append({
+                    "metric": "p0", "current": p0,
+                    "baseline": round(baselines["avg_p0"], 1),
+                    "deviation": round(dev, 2),
+                    "severity": "critical" if abs(dev) > 3 else "warning",
+                })
+
+        # 收敛轮次检查
+        if baselines.get("rounds_std", 0) > 0:
+            rnd = len(r.get("rounds", []))
+            dev = (rnd - baselines["avg_rounds"]) / baselines["rounds_std"]
+            if abs(dev) > 2:
+                alerts.append({
+                    "metric": "rounds", "current": rnd,
+                    "baseline": baselines["avg_rounds"],
+                    "deviation": round(dev, 2),
+                    "severity": "critical" if abs(dev) > 3 else "warning",
+                })
+
+        alerts_per_run.append({
+            "run_id": meta.get("run_id", ""),
+            "alerts": alerts,
+        })
+
+    return alerts_per_run
+
+
 def render_comparison_md(runs: list[dict]) -> str:
     """从多份 benchmark JSON 渲染横向对比 Markdown 报告。"""
     if not runs:
@@ -37,6 +136,10 @@ def render_comparison_md(runs: list[dict]) -> str:
         "",
     ]
 
+    # ── 基线计算 ──
+    baselines = _compute_baselines(runs)
+    anomalies = _detect_anomalies(runs, baselines)
+
     # ── 运行概览表 ──
     lines.append("## 运行概览")
     lines.append("")
@@ -47,14 +150,35 @@ def render_comparison_md(runs: list[dict]) -> str:
         summary = r["summary"]
         converged = "✅" if summary.get("converged") else "❌"
         rounds_count = len(r.get("rounds", []))
+        # 检查是否有异常
+        run_anomaly = next((a for a in anomalies if a["run_id"] == meta["run_id"]), None)
+        flag = ""
+        if run_anomaly and run_anomaly["alerts"]:
+            has_critical = any(a["severity"] == "critical" for a in run_anomaly["alerts"])
+            flag = " 🔴" if has_critical else " ⚠️"
+
         lines.append(
-            f"| `{meta['run_id']}` | {meta['timestamp_start'][:10]} "
+            f"| `{meta['run_id']}`{flag} | {meta['timestamp_start'][:10]} "
             f"| {meta.get('requirement_slug', '')[:20]} "
             f"| {rounds_count} | {converged} "
             f"| {summary['total_duration_ms'] / 1000:.0f} "
             f"| {summary['total_tokens']:,} |"
         )
     lines.append("")
+
+    # ── 基线概览 ──
+    if baselines.get("sample_count", 0) >= 2:
+        lines.append("## 基线概览")
+        lines.append("")
+        lines.append(f"**样本数**: {baselines['sample_count']} 次运行")
+        lines.append("")
+        lines.append("| 指标 | 均值 | 标准差 |")
+        lines.append("|------|------|--------|")
+        lines.append(f"| 起始 P0 | {baselines['avg_p0']} | ±{baselines['p0_std']} |")
+        lines.append(f"| 总 Token | {baselines['avg_tokens']:,} | ±{baselines['tokens_std']:,} |")
+        lines.append(f"| 收敛轮次 | {baselines['avg_rounds']} | ±{baselines['rounds_std']} |")
+        lines.append(f"| 缓存命中率 | {baselines['avg_cache_hit']*100:.1f}% | ±{baselines['cache_std']*100:.1f}% |")
+        lines.append("")
 
     # ── 趋势：Token 消耗 ──
     lines.append("## Token 消耗趋势")
@@ -116,6 +240,23 @@ def render_comparison_md(runs: list[dict]) -> str:
             f"| `{meta['run_id']}` | {tpp_str} | {prr_str} |"
         )
     lines.append("")
+
+    # ── 异常告警 ──
+    any_alerts = any(a["alerts"] for a in anomalies)
+    if any_alerts:
+        lines.append("## 异常告警")
+        lines.append("")
+        lines.append("| Run ID | 指标 | 当前值 | 基线均值 | 偏离(σ) | 严重度 |")
+        lines.append("|--------|------|--------|---------|---------|--------|")
+        for run_anomaly in anomalies:
+            for alert in run_anomaly["alerts"]:
+                severity_icon = "🔴" if alert["severity"] == "critical" else "⚠️"
+                lines.append(
+                    f"| `{run_anomaly['run_id']}` | {alert['metric']} "
+                    f"| {alert['current']:,} | {alert['baseline']} "
+                    f"| {alert['deviation']}σ | {severity_icon} {alert['severity']} |"
+                )
+        lines.append("")
 
     return "\n".join(lines) + "\n"
 
