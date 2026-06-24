@@ -242,6 +242,23 @@ def _compute_summary(rounds: list[dict], convergence: dict, records: list[dict] 
             if model:
                 models_used[model] = models_used.get(model, 0) + 1
 
+    # 边际修复成本
+    marginal_fix_cost = []
+    prev_tokens = None
+    for r in rounds:
+        coder = r.get("coder")
+        if coder is not None and coder.get("phase") == "fix":
+            tok = coder.get("total_tokens", 0)
+            marginal_fix_cost.append({
+                "round": r["round"],
+                "tokens": tok,
+                "delta_from_previous": (tok - prev_tokens) if prev_tokens is not None else 0,
+            })
+            prev_tokens = tok
+
+    # 审查开销占比
+    review_overhead_pct = round(reviewer_tokens / total_tokens * 100, 1) if total_tokens > 0 else 0.0
+
     return {
         "total_duration_ms": total_duration,
         "total_tokens": total_tokens,
@@ -263,6 +280,8 @@ def _compute_summary(rounds: list[dict], convergence: dict, records: list[dict] 
         },
         "converged": convergence["rounds_to_converge"] is not None,
         "models_used": models_used,
+        "marginal_fix_cost": marginal_fix_cost,
+        "review_overhead_pct": review_overhead_pct,
     }
 
 
@@ -395,6 +414,147 @@ def _compute_phase_breakdown(rounds: list[dict]) -> dict:
     return {k: v for k, v in breakdown.items() if v["calls"] > 0}
 
 
+def _localize_issues(review_dir: str, rounds: list[dict]) -> dict:
+    """按文件和规则类别统计问题分布。
+
+    从每轮 reviewer 的 pre-check-result.json 和 review-result.json
+    中提取问题，按文件和类别聚合。
+    """
+    import os
+
+    per_file = {}
+    per_category = {}
+    per_round = []
+
+    for r in rounds:
+        rn = r["round"]
+        rv = r.get("reviewer")
+        if rv is None:
+            continue
+
+        # 读取 pre-check-result.json 获取详细文件/类别信息
+        pre_check_path = os.path.join(review_dir, f"r{rn}-pre-check-result.json")
+        if os.path.isfile(pre_check_path):
+            try:
+                with open(pre_check_path, "r") as fh:
+                    data = json.load(fh)
+            except (json.JSONDecodeError, OSError):
+                data = {}
+
+            for report in data.get("file_reports", []):
+                fname = report.get("file", "unknown")
+                if fname not in per_file:
+                    per_file[fname] = {"P0": 0, "P1": 0, "P2": 0}
+
+                for finding in report.get("findings", []):
+                    level = finding.get("level", "")
+                    if level in ("P0", "P1", "P2"):
+                        per_file[fname][level] += 1
+                        per_round.append({
+                            "round": rn,
+                            "file": fname,
+                            "level": level,
+                            "code": finding.get("code", ""),
+                            "message": finding.get("message", "")[:80],
+                        })
+
+        # 读取 review-result.json 获取 AI 检查类别信息
+        ai_path = os.path.join(review_dir, f"r{rn}-review-result.json")
+        if os.path.isfile(ai_path):
+            try:
+                with open(ai_path, "r") as fh:
+                    ai_data = json.load(fh)
+            except (json.JSONDecodeError, OSError):
+                ai_data = {}
+
+            for item in ai_data.get("items", []):
+                if item.get("result") != "FAIL":
+                    continue
+                cat = item.get("category", "未分类")
+                code = item.get("code", "")
+                if cat not in per_category:
+                    per_category[cat] = {"fail": 0, "codes": []}
+                per_category[cat]["fail"] += 1
+                if code and code not in per_category[cat]["codes"]:
+                    per_category[cat]["codes"].append(code)
+
+    return {
+        "per_file": per_file,
+        "per_category": per_category,
+        "per_round": per_round,
+    }
+
+
+def _assess_fix_quality(rounds: list[dict], review_dir: str) -> dict:
+    """评估修复质量：反复问题、副作用、有效率。"""
+    import os
+
+    # 收集每轮的 FAIL code 列表
+    round_fail_codes = {}
+    for r in rounds:
+        rn = r["round"]
+        codes = set()
+        ai_path = os.path.join(review_dir, f"r{rn}-review-result.json")
+        if os.path.isfile(ai_path):
+            try:
+                with open(ai_path, "r") as fh:
+                    ai_data = json.load(fh)
+                for item in ai_data.get("items", []):
+                    if item.get("result") == "FAIL":
+                        codes.add(item.get("code", ""))
+            except (json.JSONDecodeError, OSError):
+                pass
+        round_fail_codes[rn] = codes
+
+    # 反复问题：同一 code 在多轮出现
+    all_codes = set()
+    for codes in round_fail_codes.values():
+        all_codes.update(codes)
+
+    recurring_rules = []
+    for code in all_codes:
+        appears_in = sorted([rn for rn, codes in round_fail_codes.items() if code in codes])
+        if len(appears_in) >= 2:
+            recurring_rules.append({"code": code, "rounds": appears_in})
+
+    # 修复副作用：本轮有的 code 上轮没有
+    sorted_rounds = sorted(round_fail_codes.keys())
+    fix_side_effects = []
+    for i in range(1, len(sorted_rounds)):
+        prev_codes = round_fail_codes[sorted_rounds[i-1]]
+        curr_codes = round_fail_codes[sorted_rounds[i]]
+        new_codes = curr_codes - prev_codes
+        if new_codes:
+            fix_side_effects.append({
+                "round": sorted_rounds[i],
+                "new_codes": sorted(new_codes),
+                "count": len(new_codes),
+            })
+
+    # 修复有效率：上轮标记 FAIL → 本轮仍 FAIL 的比例
+    fix_effectiveness = {}
+    for i in range(len(sorted_rounds) - 1):
+        prev_rn = sorted_rounds[i]
+        next_rn = sorted_rounds[i+1]
+        prev_codes = round_fail_codes[prev_rn]
+        next_codes = round_fail_codes[next_rn]
+        total = len(prev_codes)
+        if total > 0:
+            still_failing = len(prev_codes & next_codes)
+            fixed = total - still_failing
+            fix_effectiveness[f"round_{prev_rn}_to_{next_rn}"] = {
+                "fixed": fixed,
+                "total": total,
+                "rate_pct": round(fixed / total * 100, 1),
+            }
+
+    return {
+        "recurring_rules": recurring_rules,
+        "fix_side_effects": fix_side_effects,
+        "fix_effectiveness": fix_effectiveness,
+    }
+
+
 # ── 需求 slug ──
 
 def _slugify(text: str, max_len: int = 30) -> str:
@@ -453,6 +613,12 @@ def from_jsonl(session_id: str, jsonl_path: str,
     # 5c. 阶段拆解
     phase_breakdown = _compute_phase_breakdown(rounds)
 
+    # 5d. 问题定位
+    problem_localization = _localize_issues(review_dir, rounds)
+
+    # 5e. 修复质量
+    fix_quality = _assess_fix_quality(rounds, review_dir)
+
     # 6. 汇总
     summary = _compute_summary(rounds, convergence, records)
 
@@ -509,6 +675,8 @@ def from_jsonl(session_id: str, jsonl_path: str,
         "convergence": convergence,
         "fix_efficiency": fix_efficiency,
         "phase_breakdown": phase_breakdown,
+        "problem_localization": problem_localization,
+        "fix_quality": fix_quality,
         "summary": summary,
     }
 
@@ -615,9 +783,96 @@ def render_md(data: dict) -> str:
                 )
         lines.append("")
 
+    # 问题分布
+    pl = data.get("problem_localization", {})
+    if pl:
+        lines.append("## 问题分布")
+        lines.append("")
+
+        per_file = pl.get("per_file", {})
+        if per_file:
+            lines.append("### 按文件")
+            lines.append("")
+            lines.append("| 文件 | P0 | P1 | P2 | 合计 |")
+            lines.append("|------|----|----|----|------|")
+            for fname, counts in sorted(per_file.items(),
+                                          key=lambda x: sum(x[1].values()), reverse=True):
+                total = sum(counts.values())
+                lines.append(f"| {fname} | {counts['P0']} | {counts['P1']} | {counts['P2']} | {total} |")
+            lines.append("")
+
+        per_category = pl.get("per_category", {})
+        if per_category:
+            lines.append("### 按规则类别")
+            lines.append("")
+            lines.append("| 类别 | FAIL 数 | 涉及规则码 |")
+            lines.append("|------|---------|-----------|")
+            for cat, info in sorted(per_category.items(),
+                                      key=lambda x: x[1]["fail"], reverse=True):
+                codes_str = ", ".join(info["codes"][:5])
+                if len(info["codes"]) > 5:
+                    codes_str += f" ... 等{len(info['codes'])}条"
+                lines.append(f"| {cat} | {info['fail']} | {codes_str} |")
+            lines.append("")
+
+    # 修复质量
+    fq = data.get("fix_quality", {})
+    if fq:
+        lines.append("## 修复质量")
+        lines.append("")
+
+        recurring = fq.get("recurring_rules", [])
+        if recurring:
+            lines.append("### 反复出现的问题")
+            lines.append("")
+            lines.append("| 规则码 | 出现轮次 | 状态 |")
+            lines.append("|--------|---------|------|")
+            for rr in sorted(recurring, key=lambda x: len(x["rounds"]), reverse=True):
+                rounds_str = ", ".join(str(rn) for rn in rr["rounds"])
+                flag = "🔴 顽固" if len(rr["rounds"]) >= 3 else "⚠️"
+                lines.append(f"| {rr['code']} | {rounds_str} | {flag} |")
+            lines.append("")
+
+        side_effects = fq.get("fix_side_effects", [])
+        if side_effects:
+            lines.append("### 修复副作用")
+            lines.append("")
+            lines.append("| 轮次 | 新增 FAIL 数 | 新增规则 |")
+            lines.append("|------|-------------|---------|")
+            for se in side_effects:
+                codes_str = ", ".join(se["new_codes"])
+                lines.append(f"| {se['round']} | {se['count']} | {codes_str} |")
+            lines.append("")
+
+        effectiveness = fq.get("fix_effectiveness", {})
+        if effectiveness:
+            lines.append("### 修复有效率")
+            lines.append("")
+            lines.append("| 轮次 → 下一轮 | 已修复 | 总问题 | 有效率 |")
+            lines.append("|--------------|--------|--------|--------|")
+            for transition, stats in effectiveness.items():
+                lines.append(
+                    f"| {transition} | {stats['fixed']} | {stats['total']} "
+                    f"| {stats['rate_pct']}% |"
+                )
+            lines.append("")
+
+    # 边际修复成本
+    mfc = summary.get("marginal_fix_cost", [])
+    if mfc:
+        lines.append("### 修复边际成本")
+        lines.append("")
+        lines.append("| 轮次 | Token | 较上轮增加 |")
+        lines.append("|------|-------|-----------|")
+        for mc in mfc:
+            delta_str = f"+{mc['delta_from_previous']:,}" if mc['delta_from_previous'] > 0 else str(mc['delta_from_previous'])
+            lines.append(f"| {mc['round']} | {mc['tokens']:,} | {delta_str} |")
+        lines.append("")
+
     ce = summary["cache_efficiency"]
     lines.append(f"- **缓存命中率**: {ce['cache_hit_ratio'] * 100:.1f}%  "
                  f"(cache_read={ce['total_cache_read_tokens']:,}, input={ce['total_input_tokens']:,})")
+    lines.append(f"- **审查开销占比**: {summary['review_overhead_pct']}%")
 
     # 修复效率
     fe = data.get("fix_efficiency", {})
