@@ -3,6 +3,7 @@ import pytest
 from pipeline_engine.models import (
     TriggerType, NodeStatus, PipelineStatus, ActionType,
     PipelineDefaults, EdgeCondition, EdgeConfig, NodeConfig, PipelineConfig,
+    NodeResult, PipelineState, NodeToExecute, NextAction,
 )
 
 
@@ -257,3 +258,156 @@ class TestPipelineConfigValidation:
     def test_from_dict_invalid_type(self):
         with pytest.raises(ValueError, match="must be a dict"):
             PipelineConfig.from_dict([1, 2, 3])
+
+
+class TestNodeResult:
+    def test_from_dict(self):
+        d = {"node_id": "coder", "status": "success", "summary": "ok",
+             "agent_verdict": "", "outputs": {}, "timestamp": "2026-01-01T00:00:00Z"}
+        obj = NodeResult.from_dict(d)
+        assert obj.node_id == "coder"
+        assert obj.status == NodeStatus.SUCCESS
+        assert obj.agent_verdict == ""
+
+    def test_to_dict(self):
+        obj = NodeResult(node_id="reviewer", status=NodeStatus.SUCCESS,
+                         summary="ok", agent_verdict="REVIEW_PASSED")
+        d = obj.to_dict()
+        assert d["node_id"] == "reviewer"
+        assert d["agent_verdict"] == "REVIEW_PASSED"
+
+    def test_defaults(self):
+        obj = NodeResult(node_id="x", status=NodeStatus.SKIPPED)
+        assert obj.summary == ""
+        assert obj.agent_verdict == ""
+        assert obj.timestamp != ""
+        assert obj.outputs == {}
+
+    def test_timestamp_auto_generated(self):
+        obj = NodeResult(node_id="t", status=NodeStatus.SUCCESS)
+        assert obj.timestamp != ""
+        assert "T" in obj.timestamp
+
+
+class TestPipelineState:
+    def test_from_dict_empty(self):
+        d = {"pipeline_name": "test", "status": "pending"}
+        obj = PipelineState.from_dict(d)
+        assert obj.pipeline_name == "test"
+        assert obj.status == PipelineStatus.PENDING
+        assert obj.round == 0
+        assert obj.current_nodes == []
+
+    def test_from_dict_full(self):
+        d = {
+            "pipeline_name": "test", "status": "running", "round": 2,
+            "current_nodes": ["reviewer"],
+            "node_results": {
+                "coder": {"node_id": "coder", "status": "success", "summary": "ok",
+                          "agent_verdict": "", "outputs": {}, "timestamp": ""}
+            },
+            "history": [],
+            "requirement": "build login",
+            "started_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:01:00Z",
+        }
+        obj = PipelineState.from_dict(d)
+        assert obj.round == 2
+        assert obj.current_nodes == ["reviewer"]
+        assert "coder" in obj.node_results
+        assert obj.node_results["coder"].status == NodeStatus.SUCCESS
+
+    def test_to_dict_roundtrip(self):
+        obj = PipelineState(pipeline_name="test")
+        obj.requirement = "build something"
+        obj.start()
+        d = obj.to_dict()
+        assert d["pipeline_name"] == "test"
+        assert d["status"] == "running"
+
+    def test_start_sets_running(self):
+        obj = PipelineState(pipeline_name="test")
+        obj.start()
+        assert obj.status == PipelineStatus.RUNNING
+        assert obj.started_at != ""
+
+    def test_complete(self):
+        obj = PipelineState(pipeline_name="test")
+        obj.complete()
+        assert obj.status == PipelineStatus.COMPLETED
+        assert obj.current_nodes == []
+
+    def test_error(self):
+        obj = PipelineState(pipeline_name="test")
+        obj.error()
+        assert obj.status == PipelineStatus.ERROR
+
+    def test_record_result(self):
+        obj = PipelineState(pipeline_name="test")
+        obj.start()
+        result = NodeResult(node_id="coder", status=NodeStatus.SUCCESS,
+                            summary="5 files")
+        obj.record_result(result)
+        assert "coder" in obj.node_results
+        assert len(obj.history) == 1
+        assert obj.history[0]["node"] == "coder"
+
+    def test_increment_round(self):
+        obj = PipelineState(pipeline_name="test")
+        assert obj.round == 0
+        obj.increment_round()
+        assert obj.round == 1
+
+
+class TestNodeToExecute:
+    def test_to_dict(self):
+        obj = NodeToExecute(node_id="coder", agent_type="coder",
+                            prompt="Generate code", timeout="900s",
+                            round=1, phase="fix")
+        d = obj.to_dict()
+        assert d["node_id"] == "coder"
+        assert d["prompt"] == "Generate code"
+        assert d["phase"] == "fix"
+        assert d["round"] == 1
+        assert d["timeout"] == "900s"
+
+
+class TestNextAction:
+    def test_to_dict_execute(self):
+        node = NodeToExecute(node_id="coder", agent_type="coder",
+                             prompt="Generate", timeout="900s", round=0,
+                             phase="code_generation")
+        obj = NextAction(action=ActionType.EXECUTE, nodes=[node],
+                         message="Execute coder")
+        d = obj.to_dict()
+        assert d["action"] == "execute"
+        assert len(d["nodes"]) == 1
+        assert d["nodes"][0]["node_id"] == "coder"
+
+    def test_to_dict_done(self):
+        obj = NextAction(action=ActionType.DONE, message="Completed")
+        d = obj.to_dict()
+        assert d["action"] == "done"
+        assert d["nodes"] == []
+
+    def test_to_dict_error(self):
+        obj = NextAction(action=ActionType.ERROR, message="Something went wrong")
+        d = obj.to_dict()
+        assert d["action"] == "error"
+        assert d["message"] == "Something went wrong"
+
+    def test_to_json(self):
+        obj = NextAction(action=ActionType.DONE, message="Done!")
+        j = obj.to_json()
+        assert '"action": "done"' in j
+        assert '"message": "Done!"' in j
+
+    def test_parallel_nodes(self):
+        n1 = NodeToExecute(node_id="checker_a", agent_type="reviewer",
+                           prompt="Check A", timeout="300s", round=0, phase="review")
+        n2 = NodeToExecute(node_id="checker_b", agent_type="reviewer",
+                           prompt="Check B", timeout="300s", round=0, phase="review")
+        obj = NextAction(action=ActionType.EXECUTE, nodes=[n1, n2],
+                         message="Run 2 checks in parallel")
+        d = obj.to_dict()
+        assert len(d["nodes"]) == 2

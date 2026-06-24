@@ -238,3 +238,175 @@ class PipelineConfig:
         # a node from being considered a start node.
         has_incoming = {e.to for e in self.edges if e.trigger == TriggerType.ON_SUCCESS}
         return [n for n in self.nodes if n.id not in has_incoming]
+
+
+# ── Runtime State Entities ─────────────────────────────────────────
+
+
+@dataclass
+class NodeResult:
+    """Record of a single node execution."""
+    node_id: str
+    status: NodeStatus
+    summary: str = ""
+    agent_verdict: str = ""    # REVIEW_PASSED / REVIEW_FAILED / REVIEW_ERROR / ""
+    outputs: dict[str, str] = field(default_factory=dict)
+    timestamp: str = ""
+
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "NodeResult":
+        if not isinstance(d, dict):
+            raise ValueError(f"node_result must be a dict, got {type(d).__name__}")
+        return cls(
+            node_id=d.get("node_id", ""),
+            status=NodeStatus(d.get("status", "skipped")),
+            summary=d.get("summary", ""),
+            agent_verdict=d.get("agent_verdict", ""),
+            outputs=d.get("outputs", {}),
+            timestamp=d.get("timestamp", ""),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "node_id": self.node_id,
+            "status": self.status.value,
+            "summary": self.summary,
+            "agent_verdict": self.agent_verdict,
+            "outputs": self.outputs,
+            "timestamp": self.timestamp,
+        }
+
+
+@dataclass
+class PipelineState:
+    """Persistent runtime state stored in pipeline-state.json."""
+    pipeline_name: str
+    status: PipelineStatus = PipelineStatus.PENDING
+    round: int = 0
+    current_nodes: list[str] = field(default_factory=list)
+    node_results: dict[str, NodeResult] = field(default_factory=dict)
+    history: list[dict] = field(default_factory=list)
+    requirement: str = ""
+    started_at: str = ""
+    updated_at: str = ""
+
+    def _touch(self):
+        self.updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def start(self):
+        self.status = PipelineStatus.RUNNING
+        self.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._touch()
+
+    def complete(self):
+        self.status = PipelineStatus.COMPLETED
+        self.current_nodes = []
+        self._touch()
+
+    def error(self):
+        self.status = PipelineStatus.ERROR
+        self.current_nodes = []
+        self._touch()
+
+    def set_current_nodes(self, node_ids: list[str]):
+        self.current_nodes = node_ids
+        self._touch()
+
+    def record_result(self, result: NodeResult):
+        self.node_results[result.node_id] = result
+        self.history.append({
+            "round": self.round,
+            "node": result.node_id,
+            "status": result.status.value,
+            "verdict": result.agent_verdict,
+            "summary": result.summary,
+            "timestamp": result.timestamp,
+        })
+        self._touch()
+
+    def clear_current_nodes(self):
+        self.current_nodes = []
+        self._touch()
+
+    def increment_round(self):
+        self.round += 1
+        self._touch()
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PipelineState":
+        if not isinstance(d, dict):
+            raise ValueError(f"pipeline_state must be a dict, got {type(d).__name__}")
+        node_results = {}
+        for k, v in d.get("node_results", {}).items():
+            node_results[k] = NodeResult.from_dict(v)
+        return cls(
+            pipeline_name=d.get("pipeline_name", ""),
+            status=PipelineStatus(d.get("status", "pending")),
+            round=d.get("round", 0),
+            current_nodes=d.get("current_nodes", []),
+            node_results=node_results,
+            history=d.get("history", []),
+            requirement=d.get("requirement", ""),
+            started_at=d.get("started_at", ""),
+            updated_at=d.get("updated_at", ""),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "pipeline_name": self.pipeline_name,
+            "status": self.status.value,
+            "round": self.round,
+            "current_nodes": self.current_nodes,
+            "node_results": {k: v.to_dict() for k, v in self.node_results.items()},
+            "history": self.history,
+            "requirement": self.requirement,
+            "started_at": self.started_at,
+            "updated_at": self.updated_at,
+        }
+
+
+# ── CLI Response Entities ──────────────────────────────────────────
+
+
+@dataclass
+class NodeToExecute:
+    """A single node returned by the `next` command for execution."""
+    node_id: str
+    agent_type: str
+    prompt: str          # fully rendered prompt
+    timeout: str
+    round: int
+    phase: str           # "code_generation" | "review" | "fix"
+
+    def to_dict(self) -> dict:
+        return {
+            "node_id": self.node_id,
+            "agent_type": self.agent_type,
+            "prompt": self.prompt,
+            "timeout": self.timeout,
+            "round": self.round,
+            "phase": self.phase,
+        }
+
+
+@dataclass
+class NextAction:
+    """Return value of the `next` command."""
+    action: ActionType
+    nodes: list[NodeToExecute] = field(default_factory=list)
+    message: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "action": self.action.value,
+            "nodes": [n.to_dict() for n in self.nodes],
+            "message": self.message,
+        }
+
+    def to_json(self) -> str:
+        import json
+        return json.dumps(self.to_dict(), ensure_ascii=False)
