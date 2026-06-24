@@ -598,10 +598,47 @@ def render_md(data: dict) -> str:
     lines.append(f"| Duration(s) | {s_coder['total_duration_ms'] / 1000:.0f} | {s_reviewer['total_duration_ms'] / 1000:.0f} |")
     lines.append(f"| Avg Tokens/Call | {s_coder['avg_tokens_per_call']:,} | {s_reviewer['avg_tokens_per_call']:,} |")
     lines.append("")
+
+    # 阶段拆解
+    if data.get("phase_breakdown"):
+        lines.append("## 阶段拆解")
+        lines.append("")
+        lines.append("| 阶段 | 调用次数 | Tokens | 耗时(s) |")
+        lines.append("|------|---------|--------|---------|")
+        pb = data["phase_breakdown"]
+        for phase_name in ("generate", "fix", "review"):
+            if phase_name in pb:
+                p = pb[phase_name]
+                lines.append(
+                    f"| {phase_name} | {p['calls']} | {p['total_tokens']:,} "
+                    f"| {p['total_duration_ms'] / 1000:.0f} |"
+                )
+        lines.append("")
+
     ce = summary["cache_efficiency"]
     lines.append(f"- **缓存命中率**: {ce['cache_hit_ratio'] * 100:.1f}%  "
                  f"(cache_read={ce['total_cache_read_tokens']:,}, input={ce['total_input_tokens']:,})")
+
+    # 修复效率
+    fe = data.get("fix_efficiency", {})
+    if fe.get("tokens_per_p0_fixed") is not None:
+        lines.append(f"- **每修复一个 P0 消耗 Token**: {fe['tokens_per_p0_fixed']:,}")
+    if fe.get("p0_reduction_rate_pct") is not None:
+        lines.append(f"- **P0 减少率**: {fe['p0_reduction_rate_pct']}%")
+
     lines.append(f"- **是否收敛**: {'✅' if summary['converged'] else '❌'}")
+
+    # 模型信息
+    models = summary.get("models_used", {})
+    if models:
+        lines.append("")
+        lines.append("## 模型使用")
+        lines.append("")
+        lines.append("| Model | 调用次数 |")
+        lines.append("|-------|---------|")
+        for model, count in models.items():
+            lines.append(f"| {model} | {count} |")
+        lines.append("")
 
     return "\n".join(lines) + "\n"
 
