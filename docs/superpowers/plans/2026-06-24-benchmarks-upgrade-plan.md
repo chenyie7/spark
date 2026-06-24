@@ -89,11 +89,48 @@ except Exception:
 fi
 ```
 
-- [ ] **Step 3: 提交**
+- [ ] **Step 3: 修正 schema.py CLI 默认值**
+
+将 `benchmarks/hooks/schema.py` 第 657 行：
+
+```python
+    rdir = sys.argv[3] if len(sys.argv) > 3 else "agents/reviewer/check_system/review-output"
+```
+
+替换为：
+
+```python
+    rdir = sys.argv[3] if len(sys.argv) > 3 else "review-output"
+```
+
+- [ ] **Step 4: 修正 review-pre-hook.sh echo 信息**
+
+将 `agents/reviewer/hooks/review-pre-hook.sh` 第 51 行：
 
 ```bash
-git add benchmarks/hooks/dump-agent-payload.sh benchmarks/hooks/synthesize-benchmark.sh
-git commit -m "fix: benchmarks hooks 路径适配 review-output/{run_id} 子目录"
+    echo " 详细报告: $PROJECT_DIR/review-output/pre-check-report.md"
+```
+
+替换为读取 config 中的 output_dir：
+
+```bash
+    OUTPUT_DIR_REL=$(python3 -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f)
+    print(c.get('output_dir', '../../../review-output'))
+except Exception:
+    print('../../../review-output')
+" "$CHECK_SYSTEM_DIR/code-check-config.yaml" 2>/dev/null || echo "../../../review-output")
+    echo " 详细报告: $CHECK_SYSTEM_DIR/$OUTPUT_DIR_REL/pre-check-report.md"
+```
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add benchmarks/hooks/dump-agent-payload.sh benchmarks/hooks/synthesize-benchmark.sh benchmarks/hooks/schema.py agents/reviewer/hooks/review-pre-hook.sh
+git commit -m "fix: benchmarks hooks 和 review-pre-hook 路径适配 review-output/{run_id} 子目录"
 ```
 
 ---
