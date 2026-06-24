@@ -65,6 +65,10 @@ nodes:
       REVIEW_ERROR  — 环境/工具异常（python3 不可用、CLI 崩溃等）
 
       你的最终回复必须且只能是这三种状态之一。
+
+      4. 执行 review 前，请设置输出目录为 review-output/{run_id}/，将所有产物写入该目录。
+
+      输出目录：review-output/{run_id}/
     inputs:
       - coder_output: "${coder.outputs.target_dir}"
     outputs:

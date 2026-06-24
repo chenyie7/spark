@@ -31,7 +31,8 @@ nodes:
     agent: reviewer
     description: "Review code"
     prompt_template: |
-      Review the code in {coder_output}.
+      Review the code.
+      Output directory: {run_id}
       Return REVIEW_PASSED, REVIEW_FAILED, or REVIEW_ERROR.
     inputs:
       coder_output: "${coder.outputs.target_dir}"
