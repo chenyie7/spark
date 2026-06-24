@@ -295,6 +295,7 @@ class PipelineState:
     requirement: str = ""
     started_at: str = ""
     updated_at: str = ""
+    run_id: str = ""
 
     def _touch(self):
         """更新 updated_at 时间戳。"""
@@ -304,6 +305,8 @@ class PipelineState:
         """将流水线标记为运行中，记录开始时间。"""
         self.status = PipelineStatus.RUNNING
         self.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if not self.run_id:
+            self.run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "-000"
         self._touch()
 
     def complete(self):
@@ -363,6 +366,7 @@ class PipelineState:
             requirement=d.get("requirement", ""),
             started_at=d.get("started_at", ""),
             updated_at=d.get("updated_at", ""),
+            run_id=d.get("run_id", ""),
         )
 
     def to_dict(self) -> dict:
@@ -376,6 +380,7 @@ class PipelineState:
             "requirement": self.requirement,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
+            "run_id": self.run_id,
         }
 
 

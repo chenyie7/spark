@@ -358,6 +358,22 @@ class TestPipelineState:
         obj.increment_round()
         assert obj.round == 1
 
+    def test_run_id_present(self):
+        obj = PipelineState(pipeline_name="test", run_id="20260624103000-001")
+        assert obj.run_id == "20260624103000-001"
+
+    def test_run_id_default(self):
+        obj = PipelineState(pipeline_name="test")
+        assert obj.run_id == ""
+
+    def test_run_id_roundtrip(self):
+        obj = PipelineState(pipeline_name="test", run_id="20260624103000-001")
+        obj.start()
+        d = obj.to_dict()
+        assert d["run_id"] == "20260624103000-001"
+        restored = PipelineState.from_dict(d)
+        assert restored.run_id == "20260624103000-001"
+
 
 class TestNodeToExecute:
     def test_to_dict(self):
