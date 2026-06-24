@@ -19,11 +19,12 @@ nodes:
     description: "Generate code"
     prompt_template: |
       Generate code for: {requirement}
+      Output: {target_dir}/src/main/java
       {review_context}
     inputs:
       requirement: "${user_input}"
     outputs:
-      target_dir: "src/main/java"
+      target_dir: "{target_dir}/src/main/java"
     timeout: 900s
 
   - id: reviewer
@@ -31,13 +32,13 @@ nodes:
     agent: reviewer
     description: "Review code"
     prompt_template: |
-      Review the code.
-      Output directory: {run_id}
+      Review code at {target_dir}/src/main/java.
+      Output directory: review-output/{run_id}/
       Return REVIEW_PASSED, REVIEW_FAILED, or REVIEW_ERROR.
     inputs:
       coder_output: "${coder.outputs.target_dir}"
     outputs:
-      final_report: "review-output/final-review-report.md"
+      final_report: "review-output/{run_id}/final-review-report.md"
     timeout: 600s
 
 edges:
@@ -105,17 +106,17 @@ def sample_pipeline_dict() -> dict:
             {
                 "id": "coder", "type": "agent", "agent": "coder",
                 "description": "Generate code",
-                "prompt_template": "Generate: {requirement}",
+                "prompt_template": "Generate: {requirement} to {target_dir}/src/main/java",
                 "inputs": {"requirement": "${user_input}"},
-                "outputs": {"target_dir": "src/main/java"},
+                "outputs": {"target_dir": "{target_dir}/src/main/java"},
                 "timeout": "900s"
             },
             {
                 "id": "reviewer", "type": "agent", "agent": "reviewer",
                 "description": "Review code",
-                "prompt_template": "Review and return verdict.",
+                "prompt_template": "Review {target_dir}/src/main/java. Output: review-output/{run_id}/",
                 "inputs": {"coder_output": "${coder.outputs.target_dir}"},
-                "outputs": {"final_report": "review-output/final-review-report.md"},
+                "outputs": {"final_report": "review-output/{run_id}/final-review-report.md"},
                 "timeout": "600s"
             }
         ],

@@ -39,7 +39,7 @@ nodes:
     type: agent
     agent: coder
     description: Generate code
-    prompt_template: "Generate: {requirement}"
+    prompt_template: "Generate: {requirement} to {target_dir}/src/main/java"
     timeout: 500s
   - id: reviewer
     type: agent
@@ -113,6 +113,37 @@ class TestCLIStart:
         ], cwd=tmp_path)
         assert result.returncode != 0
 
+    def test_start_stores_target_dir_in_state(self, tmp_path):
+        """start --target-dir admin-test 将值写入状态文件"""
+        import json
+        pipeline_file = _make_minimal_pipeline(tmp_path)
+        state_file = tmp_path / "state.json"
+        result = run_cli([
+            "start",
+            "--pipeline", str(pipeline_file),
+            "--state-file", str(state_file),
+            "--requirement", "test",
+            "--target-dir", "admin-test",
+        ], cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data.get("target_dir") == "admin-test"
+
+    def test_start_defaults_target_dir_to_dot(self, tmp_path):
+        """start 不传 --target-dir 时默认为 '.'"""
+        import json
+        pipeline_file = _make_minimal_pipeline(tmp_path)
+        state_file = tmp_path / "state.json"
+        result = run_cli([
+            "start",
+            "--pipeline", str(pipeline_file),
+            "--state-file", str(state_file),
+            "--requirement", "test",
+        ], cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data.get("target_dir") == "."
+
 
 class TestCLINext:
     def test_next_returns_coder(self, tmp_path: Path):
@@ -133,6 +164,20 @@ class TestCLINext:
         data = json.loads(result.stdout)
         assert data["action"] == "error"
         assert "未找到流水线状态" in data["message"]
+
+    def test_next_prompt_contains_target_dir(self, tmp_path):
+        """next 返回的 prompt 中包含自定义 target_dir"""
+        import json
+        pipeline_file = _make_minimal_pipeline(tmp_path)
+        state_file = tmp_path / "state.json"
+        run_cli(["start", "--pipeline", str(pipeline_file),
+                 "--state-file", str(state_file), "--requirement", "test",
+                 "--target-dir", "custom-module"], cwd=tmp_path)
+        result = run_cli(["next", "--state-file", str(state_file),
+                          "--pipeline", str(pipeline_file)], cwd=tmp_path)
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert "custom-module/src/main/java" in data["nodes"][0]["prompt"]
 
 
 class TestCLIReport:

@@ -427,3 +427,29 @@ class TestNextAction:
                          message="Run 2 checks in parallel")
         d = obj.to_dict()
         assert len(d["nodes"]) == 2
+
+
+class TestPipelineStateTargetDir:
+    """PipelineState.target_dir 字段的测试。"""
+
+    def test_target_dir_defaults_to_dot(self):
+        """新建 PipelineState 时 target_dir 默认值为 '.'"""
+        from pipeline_engine.models import PipelineState
+        state = PipelineState(pipeline_name="test")
+        assert state.target_dir == "."
+
+    def test_target_dir_roundtrip(self):
+        """from_dict / to_dict 往返保持 target_dir 不变"""
+        from pipeline_engine.models import PipelineState
+        state = PipelineState(pipeline_name="test", target_dir="admin-test")
+        data = state.to_dict()
+        assert data["target_dir"] == "admin-test"
+        restored = PipelineState.from_dict(data)
+        assert restored.target_dir == "admin-test"
+
+    def test_target_dir_missing_defaults_to_dot(self):
+        """from_dict 缺少 target_dir 时回退为 '.'"""
+        from pipeline_engine.models import PipelineState
+        data = {"pipeline_name": "test"}
+        state = PipelineState.from_dict(data)
+        assert state.target_dir == "."
