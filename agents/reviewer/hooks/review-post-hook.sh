@@ -8,12 +8,25 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # hooks/ → reviewer/ → agents/ → project root
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-
-PRE_CHECK_JSON="${1:-$PROJECT_DIR/review-output/pre-check-result.json}"
-AI_CHECK_JSON="${2:-$PROJECT_DIR/review-output/review-result.json}"
-OUTPUT_MD="${3:-$PROJECT_DIR/review-output/final-review-report.md}"
-
 CHECK_SYSTEM_DIR="$PROJECT_DIR/agents/reviewer/check_system"
+
+# 从 code-check-config.yaml 读取 output_dir（相对于 check_system 目录）
+OUTPUT_DIR_REL=$(python3 -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f)
+    print(c.get('output_dir', '../../../review-output'))
+except Exception:
+    print('../../../review-output')
+" "$CHECK_SYSTEM_DIR/code-check-config.yaml")
+
+# 解析为绝对路径
+OUTPUT_DIR_ABS="$(cd "$CHECK_SYSTEM_DIR/$OUTPUT_DIR_REL" 2>/dev/null && pwd || echo "$PROJECT_DIR/review-output")"
+
+PRE_CHECK_JSON="${1:-$OUTPUT_DIR_ABS/pre-check-result.json}"
+AI_CHECK_JSON="${2:-$OUTPUT_DIR_ABS/review-result.json}"
+OUTPUT_MD="${3:-$OUTPUT_DIR_ABS/final-review-report.md}"
 
 cd "$CHECK_SYSTEM_DIR"
 
