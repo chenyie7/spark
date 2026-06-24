@@ -37,9 +37,37 @@ if content and isinstance(content, list):
         if isinstance(block, dict) and block.get('type') == 'text':
             last_msg = block.get('text', '')
             break
-last_msg = last_msg[:200] if last_msg else ''
 
 usage = tr.get('usage', {})
+
+# extract model info
+model = usage.get('model', '') or ''
+
+# detect verdict from last_msg
+verdict = ''
+if 'REVIEW_PASSED' in last_msg:
+    verdict = 'REVIEW_PASSED'
+elif 'REVIEW_FAILED' in last_msg:
+    verdict = 'REVIEW_FAILED'
+elif 'REVIEW_ERROR' in last_msg:
+    verdict = 'REVIEW_ERROR'
+
+# detect error/failure signals
+has_error = 'error' in last_msg[:200].lower() or 'failed' in last_msg[:200].lower() or 'Traceback' in last_msg
+
+# distinguish pipeline Agent vs dev sub-agent
+desc = ti.get('description', '')
+is_dev_agent = (
+    'Task' in desc and (
+        'Implement' in desc or
+        'review Task' in desc.lower() or
+        'Spec review' in desc or
+        'Code quality review' in desc or
+        'Fix Task' in desc
+    )
+)
+
+last_msg_snippet = last_msg[:500] if last_msg else ''
 
 rec = {
     'ts': int(time.time()),
@@ -51,7 +79,12 @@ rec = {
     'total_tokens': tr.get('totalTokens', 0),
     'total_tool_uses': tr.get('totalToolUseCount', 0),
     'usage': usage,
-    'last_message_snippet': last_msg,
+    'last_message_snippet': last_msg_snippet,
+    # new fields
+    'model': model,
+    'verdict': verdict,
+    'has_error': has_error,
+    'is_dev_agent': is_dev_agent,
 }
 
 print(json.dumps(rec, ensure_ascii=False))
