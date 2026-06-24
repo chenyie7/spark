@@ -89,6 +89,20 @@ class TestCLIStart:
         assert data["status"] == "started"
         assert state_file.exists()
 
+    def test_start_returns_run_id(self, tmp_path: Path):
+        pipeline_file = _make_minimal_pipeline(tmp_path)
+        state_file = tmp_path / "pipeline-state.json"
+        result = run_cli([
+            "start",
+            "--pipeline", str(pipeline_file),
+            "--state-file", str(state_file),
+            "--requirement", "test",
+        ], cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert "run_id" in data
+        assert len(data["run_id"]) == 18  # YYYYMMDDHHmmss-NNN
+
     def test_start_no_pipeline(self, tmp_path: Path):
         state_file = tmp_path / "state.json"
         result = run_cli([
