@@ -19,14 +19,22 @@ description: 自动化代码生成流水线 — coder 生成 → reviewer 审查
    - 存在 → 调用 `python3 -m pipeline_engine.cli status --state-file review-output/pipeline-state.json`，询问用户「检测到未完成的流水线，是否续接？」
    - 续接 → 直接进入 Phase 1 循环
    - 重新开始 → `python3 -m pipeline_engine.cli reset --state-file review-output/pipeline-state.json`，然后继续初始化
-2. 调用：
+2. 解析用户输入中的 `--target-dir` 参数：
+   - 如果用户指定了 `--target-dir <值>`，直接使用该值
+   - 如果未指定，询问用户一次：
+     「是否需要自定义代码输出目录？（当前默认: 项目根目录 src/main/java）
+       输入模块目录名或直接回车跳过：」
+     ├─ 用户输入了目录 → 使用该目录
+     └─ 用户直接回车/说"不"/"否" → 使用默认值 "."
+3. 调用：
    ```bash
    python3 -m pipeline_engine.cli start \
      --pipeline agents/scheduler/pipeline.yaml \
      --state-file review-output/pipeline-state.json \
+     --target-dir "<目标目录>" \
      --requirement "{用户需求}"
    ```
-3. 向用户报告启动信息（pipeline 名称、max_retries 等）
+4. 向用户报告启动信息（pipeline 名称、目标目录、max_retries 等）
 
 ### Phase 1: 执行循环
 
@@ -63,7 +71,7 @@ loop:
 
 ### 终止条件
 
-- `next` 返回 `action=="done"` → 读取 `review-output/final-review-report.md` 展示结果
+- `next` 返回 `action=="done"` → 从 `start` 命令返回的 `run_id` 构造路径，读取 `review-output/{run_id}/final-review-report.md` 展示结果
 - `next` 返回 `action=="error"` → 展示错误信息，提示用户介入
 
 ---
