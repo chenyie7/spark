@@ -71,13 +71,26 @@ def cmd_start(args):
     # 生成 run_id 并存入状态
     run_id = _generate_run_id(Path("review-output"))
     state.run_id = run_id
+    state.target_dir = args.target_dir
     engine._save_state()
+
+    # 同步更新 code-check-config.yaml，确保 reviewer 的扫描路径和输出目录正确
+    import yaml as _yaml
+    _config_path = Path("agents/reviewer/check_system/code-check-config.yaml")
+    if _config_path.exists():
+        with open(_config_path, "r") as f:
+            _cfg = _yaml.safe_load(f) or {}
+        _cfg["default_scan_path"] = f"../../../{state.target_dir}/src/main/java"
+        _cfg["output_dir"] = f"../../../review-output/{state.run_id}/"
+        with open(_config_path, "w") as f:
+            _yaml.dump(_cfg, f, allow_unicode=True, default_flow_style=False)
 
     print(json.dumps({
         "status": "started",
         "pipeline_name": state.pipeline_name,
         "round": 0,
         "run_id": run_id,
+        "target_dir": state.target_dir,
         "max_retries": config.defaults.max_retries,
         "message": f"流水线 '{config.name}' 已启动。",
     }))
@@ -190,6 +203,8 @@ def main():
     p_start.add_argument("--state-file", default="review-output/pipeline-state.json",
                          help="状态文件路径")
     p_start.add_argument("--requirement", required=True, help="用户需求描述")
+    p_start.add_argument("--target-dir", default=".",
+                         help="模块根目录（相对于项目根）")
 
     # ── next ──
     p_next = sub.add_parser("next", help="获取下一个要执行的节点")
