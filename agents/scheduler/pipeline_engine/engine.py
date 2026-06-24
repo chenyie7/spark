@@ -124,7 +124,6 @@ class PipelineEngine:
         # -- No more nodes -> check for terminal conditions --
         if not next_node_configs:
             # Determine why we're done by checking the previous node's verdict
-            done_message = ""
             for nid in prev_current_nodes:
                 if nid in state.node_results:
                     r = state.node_results[nid]
@@ -142,6 +141,14 @@ class PipelineEngine:
                         return NextAction(
                             action=ActionType.DONE,
                             message=f"Pipeline terminated due to error in node '{nid}'."
+                        )
+                    # Non-reviewer node failure (e.g. coder crashed): don't claim success
+                    if r.status != NodeStatus.SUCCESS:
+                        state.error()
+                        self._save_state()
+                        return NextAction(
+                            action=ActionType.ERROR,
+                            message=f"Pipeline failed: node '{nid}' terminated with status '{r.status.value}'."
                         )
             state.complete()
             self._save_state()
@@ -191,6 +198,19 @@ class PipelineEngine:
                 f"Node '{node_id}' is not in current_nodes {self.state.current_nodes}. "
                 f"Did you already report it?"
             )
+        if node_id in self.state.node_results:
+            # Only block duplicates reported in the same round (allow re-report
+            # across rounds — e.g. coder in fix loop round 1 was also reported in round 0)
+            already_in_round = any(
+                entry["node"] == node_id and entry["round"] == self.state.round
+                for entry in self.state.history
+            )
+            if already_in_round:
+                prev = self.state.node_results[node_id]
+                raise ValueError(
+                    f"Node '{node_id}' has already been reported in round {self.state.round} "
+                    f"(status={prev.status.value}). Duplicate reports are not allowed."
+                )
         result = NodeResult(
             node_id=node_id,
             status=status,

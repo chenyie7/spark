@@ -117,6 +117,46 @@ class TestPipelineEngineNext:
         assert action.action == ActionType.DONE
         assert "error" in action.message.lower()
 
+    # ── Non-reviewer node failure tests (C1) ─────────────────────────
+
+    def test_coder_error_returns_error_not_success(self, sample_pipeline_path: Path, state_path: Path):
+        """Coder returns ERROR (agent crash) -> pipeline should ERROR, not claim success."""
+        config = load_pipeline(sample_pipeline_path)
+        engine = PipelineEngine(config, state_path)
+        engine.start("test")
+        engine.next()  # coder
+        engine.report("coder", NodeStatus.ERROR, "process crashed")
+        action = engine.next()
+        assert action.action == ActionType.ERROR
+        assert "failed" in action.message.lower()
+        assert "successfully" not in action.message.lower()
+
+    def test_coder_failed_returns_error_not_success(self, sample_pipeline_path: Path, state_path: Path):
+        """Coder returns FAILED -> pipeline should ERROR, not claim success."""
+        config = load_pipeline(sample_pipeline_path)
+        engine = PipelineEngine(config, state_path)
+        engine.start("test")
+        engine.next()  # coder
+        engine.report("coder", NodeStatus.FAILED, "build failed")
+        action = engine.next()
+        assert action.action == ActionType.ERROR
+        assert "failed" in action.message.lower()
+        assert "successfully" not in action.message.lower()
+
+    def test_reviewer_failed_empty_verdict_returns_error(self, sample_pipeline_path: Path, state_path: Path):
+        """Reviewer returns FAILED status with empty verdict -> pipeline should ERROR."""
+        config = load_pipeline(sample_pipeline_path)
+        engine = PipelineEngine(config, state_path)
+        engine.start("test")
+        engine.next()  # coder
+        engine.report("coder", NodeStatus.SUCCESS, "ok")
+        engine.next()  # reviewer
+        engine.report("reviewer", NodeStatus.FAILED, "crashed without verdict", agent_verdict="")
+        action = engine.next()
+        assert action.action == ActionType.ERROR
+        assert "failed" in action.message.lower()
+        assert "successfully" not in action.message.lower()
+
 
 class TestPipelineEngineReport:
     def test_report_with_verdict(self, sample_pipeline_path: Path, state_path: Path):
@@ -134,6 +174,16 @@ class TestPipelineEngineReport:
         engine.start("test")
         with pytest.raises(ValueError, match="not in current_nodes"):
             engine.report("reviewer", NodeStatus.SUCCESS, "?")
+
+    def test_double_report_raises(self, sample_pipeline_path: Path, state_path: Path):
+        """Reporting the same node twice should raise ValueError."""
+        config = load_pipeline(sample_pipeline_path)
+        engine = PipelineEngine(config, state_path)
+        engine.start("test")
+        engine.next()  # sets current_nodes=["coder"]
+        engine.report("coder", NodeStatus.SUCCESS, "first report")
+        with pytest.raises(ValueError, match="already been reported"):
+            engine.report("coder", NodeStatus.SUCCESS, "duplicate report")
 
 
 class TestPipelineEngineStatus:
