@@ -95,12 +95,23 @@ p_start.add_argument("--target-dir", default=".",
                      help="模块根目录（相对于项目根）")
 ```
 
-`cmd_start()` 中：
+`cmd_start()` 中，除设置 `target_dir` 外，还需同步更新 `code-check-config.yaml`，使 reviewer 的程序预检使用正确的扫描路径和输出目录：
 
 ```python
 state = engine.start(args.requirement)
-state.target_dir = args.target_dir  # engine.start() 设置默认值后覆盖
+state.target_dir = args.target_dir
 engine._save_state()
+
+# 同步更新 code-check-config.yaml，确保 reviewer 的扫描路径和输出目录正确
+_config_path = Path("agents/reviewer/check_system/code-check-config.yaml")
+if _config_path.exists():
+    import yaml
+    with open(_config_path, "r") as f:
+        _cfg = yaml.safe_load(f) or {}
+    _cfg["default_scan_path"] = f"../../../{state.target_dir}/src/main/java"
+    _cfg["output_dir"] = f"../../../review-output/{state.run_id}/"
+    with open(_config_path, "w") as f:
+        yaml.dump(_cfg, f, allow_unicode=True, default_flow_style=False)
 ```
 
 ### 3. Engine `_render_prompt` — 新增 `{target_dir}` 变量
