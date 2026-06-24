@@ -4,6 +4,8 @@ All model classes follow the Spring Boot @ConfigurationProperties pattern:
 YAML structure → strict dataclass tree → from_dict() factory with validation.
 """
 
+# NOTE: dataclass, field, datetime, timezone, Optional are forward-declared here
+# for upcoming dataclass definitions in Tasks 3 and 4. Do not remove.
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
