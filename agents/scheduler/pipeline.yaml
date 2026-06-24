@@ -38,14 +38,15 @@ nodes:
 
       {review_context}
 
-      ⚠️ 边界约束：你只能修改 src/main/java/ 目录下的 Java 文件和项目根目录的 pom.xml（如需添加依赖）。禁止修改 agents/ 或 hooks/ 目录下的任何文件。这些是审查系统的规则和配置，修改它们会导致流水线结果不可信。
+      ⚠️ 边界约束：你只能修改 {target_dir}/src/main/java/ 目录下的 Java 文件和 {target_dir}/pom.xml（如需添加依赖）。禁止修改 agents/ 或 hooks/ 目录下的任何文件。这些是审查系统的规则和配置，修改它们会导致流水线结果不可信。
 
-      将生成的 Java 代码写入 src/main/java 对应包路径下。
+      代码输出目录：{target_dir}/src/main/java
+      将生成的 Java 代码写入 {target_dir}/src/main/java 对应包路径下。
     inputs:
       - requirement: "${user_input}"
-      - review_context: "review-output/ 目录下的审查结果（仅修复轮次时存在）"
+      - review_context: "review-output/{run_id}/ 目录下的审查结果（仅修复轮次时存在）"
     outputs:
-      - target_dir: "src/main/java"
+      - target_dir: "{target_dir}/src/main/java"
     timeout: 900s
     depends_on: []          # 起始节点，无依赖
 
@@ -56,7 +57,7 @@ nodes:
     prompt_template: |
       你是 review agent。请严格按以下步骤执行，不可跳过任何步骤。
 
-      1. 调用 Skill 工具执行 review：使用 skill="review", args="src/main/java"
+      1. 调用 Skill 工具执行 review：使用 skill="review", args="{target_dir}/src/main/java"
       2. /review 技能会自动完成程序预检（硬阻断）→ AI 语义检查 → 报告合并
       3. 根据执行结果，返回以下三种状态之一：
 
@@ -72,9 +73,9 @@ nodes:
     inputs:
       - coder_output: "${coder.outputs.target_dir}"
     outputs:
-      - pre_check: "review-output/pre-check-result.json"
-      - ai_review: "review-output/review-result.json"
-      - final_report: "review-output/final-review-report.md"
+      - pre_check: "review-output/{run_id}/pre-check-result.json"
+      - ai_review: "review-output/{run_id}/review-result.json"
+      - final_report: "review-output/{run_id}/final-review-report.md"
     timeout: 600s
     depends_on: [coder]     # 依赖 coder 产出
 
