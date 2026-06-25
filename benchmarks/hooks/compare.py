@@ -12,16 +12,35 @@ from pathlib import Path
 
 
 def load_all_benchmarks(bench_dir: str) -> list[dict]:
-    """加载所有 benchmark JSON 文件，按文件名排序（即按时间排序）。"""
+    """加载所有 benchmark JSON，兼容新旧两种目录结构。"""
     results = []
+
+    # 新格式: runs/{run_id}/benchmark.json
+    runs_dir = os.path.join(bench_dir, "runs")
+    if os.path.isdir(runs_dir):
+        for run_dir in sorted(os.listdir(runs_dir)):
+            jpath = os.path.join(runs_dir, run_dir, "benchmark.json")
+            if os.path.isfile(jpath):
+                try:
+                    with open(jpath, "r") as f:
+                        results.append(json.load(f))
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+    # 旧格式兼容: run-*.json（benchmarks/ 根目录平铺）
     for fname in sorted(os.listdir(bench_dir)):
         if fname.endswith(".json") and fname.startswith("run-"):
             fpath = os.path.join(bench_dir, fname)
             try:
                 with open(fpath, "r") as f:
-                    results.append(json.load(f))
+                    data = json.load(f)
+                # 避免重复：新格式已加载同 run_id 则跳过
+                run_id = data.get("meta", {}).get("run_id", "")
+                if not any(r.get("meta", {}).get("run_id") == run_id for r in results):
+                    results.append(data)
             except (json.JSONDecodeError, OSError):
                 pass
+
     return results
 
 

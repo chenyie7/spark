@@ -920,14 +920,12 @@ if __name__ == "__main__":
         print("No data to synthesize (empty JSONL).", file=sys.stderr)
         sys.exit(0)
 
-    # 输出目录
-    benchmarks_dir = os.path.join(pdir, "benchmarks")
+    # 输出目录: benchmarks/runs/{run_id}/
+    benchmarks_dir = os.path.join(pdir, "benchmarks", "runs", run_id)
     os.makedirs(benchmarks_dir, exist_ok=True)
 
-    run_id = data["meta"]["run_id"]
-    slug = data["meta"]["requirement_slug"]
-    json_path = os.path.join(benchmarks_dir, f"{run_id}-{slug}.json")
-    md_path = os.path.join(benchmarks_dir, f"{run_id}-{slug}.md")
+    json_path = os.path.join(benchmarks_dir, "benchmark.json")
+    md_path = os.path.join(benchmarks_dir, "report.md")
 
     with open(json_path, "w") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
