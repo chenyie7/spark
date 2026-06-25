@@ -57,19 +57,22 @@ nodes:
     prompt_template: |
       你是 review agent。请严格按以下步骤执行，不可跳过任何步骤。
 
-      1. 调用 Skill 工具执行 review：使用 skill="review", args="{target_dir}/src/main/java"
-      2. /review 技能会自动完成程序预检（硬阻断）→ AI 语义检查 → 报告合并
-      3. 根据执行结果，返回以下三种状态之一：
+      1. 调用 MCP tool `fuck-u-code analyze` 扫描 {target_dir}/src/main/java
+         产出 quality.json，保存到 review-output/{run_id}/quality.json
+         （如 MCP 调用失败，记录警告后继续第 2 步）
 
-      REVIEW_PASSED — 预检通过，AI 检查完成，所有产物已生成
-      REVIEW_FAILED — 预检被阻断（P0>0），或 AI 语义检查有 FAIL
-      REVIEW_ERROR  — 环境/工具异常（python3 不可用、CLI 崩溃等）
+      2. 读取 agents/reviewer/check_system/rules/ai-checklist.yaml（50条审查清单）
+         读取 review-output/{run_id}/quality.json（如存在）
+         对 {target_dir}/src/main/java 下所有 Java 文件执行统一审查：
+         - 逐条对照 ai-checklist 检查规范合规 → spec_violations[]
+         - 对 quality.json 标红的高分文件做深度分析 → quality_issues[]
 
-      你的最终回复必须且只能是这三种状态之一。
+      3. 按固定 JSON schema 输出 findings.json，写入 review-output/{run_id}/findings.json
+         判定 review_status: P0>0 → FAILED, 否则 PASSED
 
-      4. 执行 review 前，请设置输出目录为 review-output/{run_id}/，将所有产物写入该目录。
+      4. 调用 python3 -m code_check.cli report 合并 quality.json + findings.json → final-review-report.md
 
-      输出目录：review-output/{run_id}/
+      返回: REVIEW_PASSED / REVIEW_FAILED / REVIEW_ERROR
     inputs:
       - coder_output: "${coder.outputs.target_dir}"
     outputs:
