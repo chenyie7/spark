@@ -1,216 +1,129 @@
-"""Data models for code-check system."""
+"""Data models for the review system — findings schema only.
+
+After the refactor, this module only defines the structured output
+that the AI reviewer must produce (findings.json).  Quality data
+from fuck-u-code is passed through as a raw dict — no model needed.
+"""
 
 from dataclasses import dataclass, field
-from enum import Enum
-from datetime import datetime, timezone
-from typing import Optional
-
-
-class Level(str, Enum):
-    """检查级别."""
-    P0 = "P0"
-    P1 = "P1"
-    P2 = "P2"
-
-
-class Result(str, Enum):
-    """AI 检查结果."""
-    PASS = "PASS"
-    FAIL = "FAIL"
-    NA = "NA"
-
-
-class BlockingStrategy(str, Enum):
-    """阻断策略."""
-    STRICT = "strict"
-    NORMAL = "normal"
-    LOOSE = "loose"
+from typing import Optional, Any
 
 
 @dataclass
-class Finding:
-    """程序预检发现的问题."""
-    code: str
-    level: Level
-    line: int
-    message: str
-    evidence: str
-    method: Optional[str] = None
+class SpecViolation:
+    """A single spec-compliance violation found by the AI reviewer."""
 
-    def to_dict(self) -> dict:
-        d = {"code": self.code, "level": self.level.value,
-             "line": self.line, "message": self.message,
-             "evidence": self.evidence}
-        if self.method is not None:
-            d["method"] = self.method
-        return d
-
-
-@dataclass
-class FileReport:
-    """单个文件的预检报告."""
-    file: str
-    findings: list[Finding] = field(default_factory=list)
+    rule_id: str          # e.g. "BE-QL-14"
+    level: str            # "P0" | "P1" | "P2"
+    file: str             # relative path, e.g. "auth/controller/AuthController.java"
+    line: int             # line number where the violation occurs
+    method: str           # method name, e.g. "login"
+    description: str      # what the violation is
+    suggestion: str       # how to fix it
 
     def to_dict(self) -> dict:
         return {
+            "rule_id": self.rule_id,
+            "level": self.level,
             "file": self.file,
-            "findings": [f.to_dict() for f in self.findings],
+            "line": self.line,
+            "method": self.method,
+            "description": self.description,
+            "suggestion": self.suggestion,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SpecViolation":
+        return cls(
+            rule_id=d["rule_id"],
+            level=d["level"],
+            file=d["file"],
+            line=d["line"],
+            method=d.get("method", "-"),
+            description=d["description"],
+            suggestion=d.get("suggestion", ""),
+        )
 
 
 @dataclass
-class ScanScope:
-    """扫描范围统计."""
-    base_path: str
-    file_count: int
-    breakdown: dict[str, int] = field(default_factory=dict)
+class QualityIssue:
+    """A code-quality issue found by the AI reviewer (often guided by fuck-u-code scores)."""
 
-    def to_dict(self) -> dict:
-        return {
-            "base_path": self.base_path,
-            "file_count": self.file_count,
-            "breakdown": self.breakdown,
-        }
-
-
-@dataclass
-class ScanMetadata:
-    """扫描元信息."""
-    module: str
-    scan_scope: ScanScope
-    blocking_strategy: BlockingStrategy
-    passed: bool
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-
-    def to_dict(self) -> dict:
-        return {
-            "module": self.module,
-            "scan_scope": self.scan_scope.to_dict(),
-            "timestamp": self.timestamp,
-            "blocking_strategy": self.blocking_strategy.value,
-            "passed": self.passed,
-        }
-
-
-@dataclass
-class ScanSummary:
-    """扫描结果汇总."""
-    total_checks: int
-    passed: int
-    failed: list[dict] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return {
-            "total_checks": self.total_checks,
-            "passed": self.passed,
-            "failed": self.failed,
-        }
-
-
-@dataclass
-class HintForAI:
-    """给 AI 的注意力线索."""
-    file: str
-    line: int
-    code: str
-    snippet: str
+    file: str             # relative path
+    line: int             # line number
+    dimension: str        # "N+1查询" | "复杂度" | "重复代码" | "异常处理" | "命名" | ...
+    severity: str         # "high" | "medium" | "low"
+    detail: str           # description of the issue
+    suggestion: str       # how to fix it
 
     def to_dict(self) -> dict:
         return {
             "file": self.file,
             "line": self.line,
-            "code": self.code,
-            "snippet": self.snippet,
+            "dimension": self.dimension,
+            "severity": self.severity,
+            "detail": self.detail,
+            "suggestion": self.suggestion,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "QualityIssue":
+        return cls(
+            file=d["file"],
+            line=d["line"],
+            dimension=d["dimension"],
+            severity=d["severity"],
+            detail=d["detail"],
+            suggestion=d.get("suggestion", ""),
+        )
 
 
 @dataclass
-class ScanResult:
-    """程序预检完整结果."""
-    metadata: ScanMetadata
-    file_reports: list[FileReport] = field(default_factory=list)
-    summary: ScanSummary = field(default_factory=lambda: ScanSummary(total_checks=0, passed=0))
-    hints_for_ai: list[HintForAI] = field(default_factory=list)
+class FindingsResult:
+    """Top-level result produced by the AI unified review."""
+
+    review_status: str   # "PASSED" | "FAILED"
+    spec_violations: list[dict] = field(default_factory=list)
+    quality_issues: list[dict] = field(default_factory=list)
+    summary: str = ""
+
+    def has_p0(self) -> bool:
+        return any(v.get("level") == "P0" for v in self.spec_violations)
+
+    def has_p1(self) -> bool:
+        return any(v.get("level") == "P1" for v in self.spec_violations)
+
+    def p0_count(self) -> int:
+        return sum(1 for v in self.spec_violations if v.get("level") == "P0")
+
+    def p1_count(self) -> int:
+        return sum(1 for v in self.spec_violations if v.get("level") == "P1")
+
+    def p2_count(self) -> int:
+        return sum(1 for v in self.spec_violations if v.get("level") == "P2")
+
+    def quality_high_count(self) -> int:
+        return sum(1 for q in self.quality_issues if q.get("severity") == "high")
+
+    def quality_medium_count(self) -> int:
+        return sum(1 for q in self.quality_issues if q.get("severity") == "medium")
+
+    def quality_low_count(self) -> int:
+        return sum(1 for q in self.quality_issues if q.get("severity") == "low")
 
     def to_dict(self) -> dict:
         return {
-            "metadata": self.metadata.to_dict(),
-            "file_reports": [r.to_dict() for r in self.file_reports],
-            "summary": self.summary.to_dict(),
-            "hints_for_ai": [h.to_dict() for h in self.hints_for_ai],
+            "review_status": self.review_status,
+            "spec_violations": self.spec_violations,
+            "quality_issues": self.quality_issues,
+            "summary": self.summary,
         }
 
-
-@dataclass
-class ReviewItem:
-    """AI 检查清单中的单条结果."""
-    code: str
-    category: str
-    result: Result
-    file: str
-    line: int
-    evidence: str
-    suggestion: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        d = {
-            "code": self.code,
-            "category": self.category,
-            "result": self.result.value,
-            "file": self.file,
-            "line": self.line,
-            "evidence": self.evidence,
-        }
-        if self.suggestion is not None:
-            d["suggestion"] = self.suggestion
-        return d
-
-
-@dataclass
-class ReviewMetadata:
-    """AI 检查元信息."""
-    module: str
-    precheck_passed: bool
-    precheck_issues: list[str] = field(default_factory=list)
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-
-    def to_dict(self) -> dict:
-        return {
-            "module": self.module,
-            "timestamp": self.timestamp,
-            "precheck_passed": self.precheck_passed,
-            "precheck_issues": self.precheck_issues,
-        }
-
-
-@dataclass
-class ReviewSummary:
-    """AI 检查结果汇总."""
-    total: int
-    pass_: int = 0
-    fail: int = 0
-    na: int = 0
-
-    def to_dict(self) -> dict:
-        return {
-            "total": self.total,
-            "pass": self.pass_,
-            "fail": self.fail,
-            "na": self.na,
-        }
-
-
-@dataclass
-class ReviewResult:
-    """AI 检查完整结果."""
-    metadata: ReviewMetadata
-    items: list[ReviewItem] = field(default_factory=list)
-    summary: ReviewSummary = field(default_factory=lambda: ReviewSummary(total=0))
-
-    def to_dict(self) -> dict:
-        return {
-            "metadata": self.metadata.to_dict(),
-            "items": [i.to_dict() for i in self.items],
-            "summary": self.summary.to_dict(),
-        }
+    @classmethod
+    def from_dict(cls, d: dict) -> "FindingsResult":
+        return cls(
+            review_status=d["review_status"],
+            spec_violations=d.get("spec_violations", []),
+            quality_issues=d.get("quality_issues", []),
+            summary=d.get("summary", ""),
+        )
