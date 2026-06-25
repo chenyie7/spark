@@ -1,164 +1,306 @@
-# AI 语义检查清单 —— 程序判断不了的"对不对"问题
-# 程序预检（program-checks.yaml）已覆盖所有确定性检查，AI 只做语义理解
+# AI 统一审查清单 — 从 coder/ 全部 12 个规范文件中提取
+# 这是 AI 审查的唯一标准输入，审查时逐条对代码执行检查
+#
+# 来源规范文件:
+#   architecture/package-structure-guide.md
+#   layered/controller-guide.md
+#   layered/service-guide.md
+#   layered/mapper-guide.md
+#   infrastructure/result-guide.md
+#   infrastructure/swagger-guide.md
+#   quality/code-style-guide.md
+#   quality/database-guide.md
 
 # ═══════════════════════════════════════════════════════════════
-# 分层架构
+# 分层架构 (来自 architecture/ layered/)
 # ═══════════════════════════════════════════════════════════════
 
 BE-ST-04:
   description: "Controller 是否直接注入 Mapper"
   level: P0
-  ai:
-    prompt_hint: "检查 Controller 类中是否直接注入了 Mapper 接口。Controller 应通过 Service 调用，直接注入 Mapper 违反了分层架构"
+  check: "检查所有 Controller 类中是否直接注入了 Mapper 接口。Controller 应通过 Service 调用，直接注入 Mapper 违反了分层架构"
 
 BE-ST-05:
   description: "Service 是否只有实现类没有接口"
   level: P1
-  ai:
-    prompt_hint: "检查 service/impl/ 下的 ServiceImpl 是否有对应的 Service 接口。Spring AOP 代理（事务、缓存）依赖接口，缺少接口会导致代理失效"
+  check: "检查 service/impl/ 下的每个 ServiceImpl 是否有对应的 Service 接口。Spring AOP 代理（事务、缓存）依赖接口，缺少接口会导致代理失效"
 
 BE-ST-07:
   description: "Service 方法是否返回 Entity 给 Controller"
   level: P1
-  ai:
-    prompt_hint: "检查 Service 方法的返回值类型是否为 Entity。Entity 是数据库映射对象，不应暴露到 Controller 层，应转换为 VO 后返回"
+  check: "检查 Service 实现类中所有 public 方法的返回值类型。Entity 是数据库映射对象，不应暴露到 Controller 层，应转换为 VO 后返回"
 
 BE-ST-18:
   description: "Entity 类命名是否符合规范"
   level: P2
-  ai:
-    prompt_hint: "检查 entity/ 目录下的实体类命名。项目规范支持两种风格：*Entity.java（如 UserEntity.java）或 Sys* 前缀（如 SysUser.java）。只要符合其中一种即可，不强制要求 Entity 后缀。检查前先读取项目的实际实体类命名模式，确认团队采用的风格。"
+  check: "检查 entity/ 目录下的实体类命名。项目规范支持两种风格：*Entity.java（如 UserEntity.java）或 Sys* 前缀（如 SysUser.java）。只要符合其中一种即可"
 
 # ═══════════════════════════════════════════════════════════════
-# 异常处理
+# Controller 层 (来自 layered/controller-guide.md)
+# ═══════════════════════════════════════════════════════════════
+
+BE-CT-01:
+  description: "GET 请求是否使用了 DTO 参数（禁止）"
+  level: P1
+  check: "检查 @GetMapping 方法是否将 DTO 作为参数（不含 @RequestParam 平铺）。GET 请求参数应平铺为 @RequestParam（≤3个）或改用 POST + @RequestBody。若参数 >3 个应收敛到 DTO + POST"
+
+BE-CT-02:
+  description: "分页查询是否统一使用 POST"
+  level: P2
+  check: "检查分页查询方法（方法名含 page 或参数含 PageQueryDTO）是否使用了 @PostMapping。分页查询统一用 POST，便于扩展筛选条件"
+
+BE-CT-03:
+  description: "Controller 方法参数 >3 个是否收敛到 DTO"
+  level: P1
+  check: "检查 Controller 方法签名，如果参数超过 3 个且未使用 DTO 封装，违规。参数 >3 个必须收敛到 DTO + @RequestBody"
+
+BE-CT-04:
+  description: "CRUD URL 是否使用了动词（禁止）"
+  level: P2
+  check: "检查 @RequestMapping 路径和 HTTP 方法。CRUD 操作用标准 RESTful 复数名词（GET/POST/PUT/DELETE /api/users），不用动词。非 CRUD 业务动作（login、logout、cancel、reset-password、assign-roles）允许动词"
+
+# ═══════════════════════════════════════════════════════════════
+# Service 层 (来自 layered/service-guide.md)
+# ═══════════════════════════════════════════════════════════════
+
+BE-SV-01:
+  description: "@Transactional 是否配置 rollbackFor = Exception.class"
+  level: P1
+  check: "检查 Service Impl 中所有 @Transactional 注解是否包含 rollbackFor = Exception.class。Spring 默认只回滚 RuntimeException，受检异常也必须回滚"
+
+BE-SV-02:
+  description: "Service 是否直接注入 HttpServletRequest（禁止）"
+  level: P1
+  check: "检查 Service 类的字段和构造参数是否包含 HttpServletRequest 或 HttpServletResponse。应使用 LoginContextHolder 获取当前用户信息。直接注入 Servlet API 在定时任务/消息队列场景会 NPE"
+
+BE-SV-03:
+  description: "Service 方法命名是否符合约定"
+  level: P2
+  check: "检查 Service 接口的方法命名：查询单个 getById/getByName，查询列表 list，分页 page，新增 create，修改 update，删除 delete/deleteBatch，状态流转用业务动词如 cancel/resetPassword"
+
+# ═══════════════════════════════════════════════════════════════
+# Mapper 层 (来自 layered/mapper-guide.md)
+# ═══════════════════════════════════════════════════════════════
+
+BE-MP-01:
+  description: "是否使用了 @Select/@Update/@Insert 注解写 SQL（禁止）"
+  level: P0
+  check: "检查 Mapper 接口方法上是否有 @Select、@Update、@Insert、@Delete 注解。SQL 必须写在 XML 文件中，注解里写 SQL 不可格式化、不可 DTD 校验"
+
+BE-MP-02:
+  description: "Entity 主键是否使用 @TableId(type = IdType.ASSIGN_ID) 雪花ID"
+  level: P1
+  check: "检查所有 Entity 类的 id 字段是否标注 @TableId(type = IdType.ASSIGN_ID)。雪花ID 是分布式环境的标准主键策略，禁止使用自增主键"
+
+BE-MP-03:
+  description: "审计字段是否配置了 @TableField(fill = ...) 自动填充"
+  level: P1
+  check: "检查 Entity 中 createId/createName/createTime/updateId/updateName/updateTime 字段是否标注了 @TableField(fill = FieldFill.INSERT) 或 @TableField(fill = FieldFill.INSERT_UPDATE)。审计字段必须由 MetaObjectHandler 自动填充，不应手动赋值"
+
+BE-MP-04:
+  description: "Mapper 多参数方法是否缺少 @Param 注解"
+  level: P1
+  check: "检查 Mapper 接口中参数 ≥2 个的方法，每个参数是否标注了 @Param 注解。MyBatis 在多参数场景下需要 @Param 才能在 XML 中引用参数名"
+
+BE-MP-05:
+  description: "是否使用 QueryWrapper 而非 LambdaQueryWrapper（禁止）"
+  level: P1
+  check: "检查是否使用了 QueryWrapper 或 UpdateWrapper（非 Lambda 版本）。LambdaQueryWrapper/LambdaUpdateWrapper 编译期安全，字段名不会写错。禁止字符串字段名构建条件"
+
+BE-MP-06:
+  description: "状态/类型字段是否使用了 MyBatis-Plus 枚举映射"
+  level: P2
+  check: "检查 Entity 中的状态、类型等有固定值范围的字段（status、type 等）。应使用 @EnumValue 标注的枚举类型替代 Integer/String 裸值。枚举提供类型安全和编译期检查"
+
+# ═══════════════════════════════════════════════════════════════
+# 异常处理 (来自 quality/error-code-reference.md)
 # ═══════════════════════════════════════════════════════════════
 
 BE-QL-01:
   description: "是否写了 throw new RuntimeException(\"自由文本\")"
   level: P1
-  ai:
-    prompt_hint: "检查代码中是否直接抛出 new RuntimeException() 或 new Exception() 并传入自由文本。应使用 BusinessException(BusinessErrorEnum.XXX) 替代，确保异常有统一错误码和国际化支持"
+  check: "检查代码中是否直接抛出 new RuntimeException() 或 new Exception() 并传入自由文本。应使用 BusinessException(BusinessErrorEnum.XXX) 替代，确保有统一错误码"
 
 BE-QL-02:
   description: "业务异常是否使用 BusinessException(BusinessErrorEnum.XXX)"
   level: P1
-  ai:
-    prompt_hint: "检查抛出的业务异常是否使用了 BusinessException 并传入了 BusinessErrorEnum 枚举值，而非直接 new BusinessException(\"文本\")。使用枚举确保错误码统一管理"
+  check: "检查抛出的业务异常是否使用了 BusinessException 并传入了 BusinessErrorEnum 枚举值，而非直接 new BusinessException(\"文本\")"
 
 BE-QL-04:
-  description: "Controller 方法是否包裹了 try-catch"
+  description: "Controller 方法是否包裹了 try-catch（禁止）"
   level: P1
-  ai:
-    prompt_hint: "检查 Controller 方法中是否手写了 try-catch 块。应由 GlobalExceptionHandler 统一拦截异常并返回 Result<T> 格式。手写 try-catch 会导致异常处理逻辑分散、返回格式不统一"
+  check: "检查 Controller 方法中是否手写了 try-catch 块。应由 GlobalExceptionHandler 统一拦截异常并返回 Result<T> 格式"
 
 BE-QL-05:
   description: "Service 中 catch 异常后是否只打日志不抛出"
   level: P1
-  ai:
-    prompt_hint: "检查 Service 层的 catch 块，确认 catch 后是否只记录了日志但没有向上抛出异常。异常被吞掉会导致上层调用者和事务管理器无法感知错误，可能造成数据不一致"
+  check: "检查 Service 层的 catch 块，确认 catch 后是否只记录了日志但没有向上抛出异常。异常被吞掉会导致事务管理器无法感知错误"
 
 BE-QL-06:
   description: "系统异常是否被 GlobalExceptionHandler 兜底处理"
   level: P2
-  ai:
-    prompt_hint: "检查 GlobalExceptionHandler 中是否有 @ExceptionHandler(Exception.class) 兜底方法，确保 NPE、IOException 等非业务异常也能返回统一格式的 Result<T> 错误响应，而非暴露堆栈信息"
+  check: "检查 GlobalExceptionHandler 中是否有 @ExceptionHandler(Exception.class) 兜底方法，确保非业务异常也能返回统一格式的 Result<T> 错误响应"
 
 # ═══════════════════════════════════════════════════════════════
-# 日志质量
+# 日志质量 (来自 infrastructure/logging-guide.md)
 # ═══════════════════════════════════════════════════════════════
 
 BE-QL-11:
   description: "log.info 是否包含关键业务信息（如 orderId、userId）"
   level: P2
-  ai:
-    prompt_hint: "检查 log.info/log.warn 语句是否包含了操作的关键业务标识。log.info(\"创建成功\") 不通过——出问题时无法定位；log.info(\"用户创建成功, userId={}, orderId={}\", userId, orderId) 通过"
+  check: "检查 log.info/log.warn 语句是否包含了操作的关键业务标识。log.info(\"创建成功\") 不通过；log.info(\"用户创建成功, userId={}\", userId) 通过"
 
 BE-QL-12:
   description: "循环内是否有大量 log.info"
   level: P2
-  ai:
-    prompt_hint: "检查 for/while 循环体内是否调用了 log.info。循环内逐条打印日志会严重影响性能，应移出循环或使用批量日志"
+  check: "检查 for/while 循环体内是否调用了 log.info。循环内逐条打印日志严重影响性能，应移出循环或使用批量日志"
 
 # ═══════════════════════════════════════════════════════════════
-# 代码质量
+# 代码质量 (来自 quality/code-style-guide.md)
 # ═══════════════════════════════════════════════════════════════
 
 BE-QL-14:
   description: "是否返回了裸的 String、boolean、Map 或 JSONObject"
   level: P1
-  ai:
-    prompt_hint: "检查 Controller 方法的返回值类型。直接返回 String、boolean、Map、JSONObject 等裸类型破坏了统一响应格式，应使用 Result<T> 包裹或定义专门的 VO 返回"
+  check: "检查 Controller 方法的返回值类型。直接返回 String、boolean、Map、JSONObject 等裸类型破坏了统一响应格式，应使用 Result<T> 包裹或定义专门的 VO 返回"
 
 BE-QL-35:
   description: "集合返回值是否可能为 null"
   level: P1
-  ai:
-    prompt_hint: "检查返回 List、Set、Map 等集合类型的方法，确保所有路径上都返回了非 null 值。返回 null 会导致调用方 NPE，应返回空集合（如 new ArrayList<>() 或 Collections.emptyList()）"
+  check: "检查返回 List、Set、Map 等集合类型的方法，确保所有路径上都返回了非 null 值。返回 null 会导致调用方 NPE，应返回空集合（new ArrayList<>() 或 Collections.emptyList()）"
 
 BE-QL-39:
   description: "循环内是否用 + 拼接字符串"
   level: P2
-  ai:
-    prompt_hint: "检查 for/while 循环内是否存在使用 + 或 += 拼接字符串的代码。循环内每次 + 拼接都会创建新的 String 对象，应使用 StringBuilder"
+  check: "检查 for/while 循环内是否存在使用 + 或 += 拼接字符串的代码。循环内每次 + 拼接都创建新 String 对象，应使用 StringBuilder"
 
 BE-QL-41:
   description: "是否存在魔法数字"
   level: P2
-  ai:
-    prompt_hint: "检查代码中是否存在未命名的数字字面量（如 if (status == 1)、sleep(5000)、size > 100）。应使用枚举或常量替代，提高可读性。注意区分：循环初始值 int i = 0、数学常量等不在此列"
+  check: "检查代码中是否存在未命名的数字字面量（如 if (status == 1)、sleep(5000)）。应使用枚举或常量替代。循环初始值 int i=0、数学常量等不在此列"
 
 BE-QL-46:
   description: "循环内是否逐条查数据库"
   level: P1
-  ai:
-    prompt_hint: "检查 for/while 循环内是否调用了 Mapper 方法逐条查询或插入数据库。应使用批量方法（selectBatchIds、insertBatch）或一次性查询（IN 条件）替代。循环内逐条操作数据库是常见的性能瓶颈"
+  check: "检查 for/while 循环内是否调用了 Mapper 方法逐条查询或插入。应使用批量方法（selectBatchIds、insertBatch）或一次性 IN 查询替代"
 
 BE-QL-16:
   description: "分页查询是否返回 Result<PageResult<T>>"
   level: P2
-  ai:
-    prompt_hint: "检查 Controller 中执行分页查询的方法是否返回了 Result<PageResult<T>> 格式。通过方法中是否使用 MyBatis-Plus Page<T> 或 IPage<T> 来判断该方法是否为分页查询。注意区分：方法名叫 list() 但实际返回全量列表的不是分页查询，不需要 PageResult。"
+  check: "检查 Controller 中执行分页查询的方法是否返回了 Result<PageResult<T>> 格式。通过是否使用 MyBatis-Plus Page<T> 或 IPage<T> 判断"
 
 BE-QL-17:
   description: "分页查询 DTO 是否继承 PageQueryDTO"
   level: P2
-  ai:
-    prompt_hint: "检查被 Controller 分页查询方法（page 方法）用作参数的 DTO 类是否继承了 PageQueryDTO。CreateDTO、UpdateDTO、AssignDTO 等非分页请求 DTO 不在此检查范围。只检查真正用于分页查询参数的 DTO。"
+  check: "检查被 Controller 分页方法用作参数的 DTO 是否继承了 PageQueryDTO。CreateDTO、UpdateDTO、AssignDTO 等非分页 DTO 不在此检查范围"
 
 BE-QL-38:
   description: "常量类是否 final + 私有构造"
   level: P2
-  ai:
-    prompt_hint: "检查名称为 *Constant、*Constants、*Code、*Codes 的真正常量类（只包含静态常量定义，无实例字段和业务方法）是否声明为 final 并包含私有构造方法。注意：PageQueryDTO、*QueryDTO 等分页查询 DTO 不是常量类，不应被此项检查。"
+  check: "检查名称为 *Constant、*Constants、*Code、*Codes 的常量类是否声明为 final 并包含私有构造方法。PageQueryDTO 等分页 DTO 不是常量类，不应被标记"
+
+BE-CS-01:
+  description: "DTO 是否有 @NoArgsConstructor（Jackson 反序列化需要）"
+  level: P0
+  check: "检查 dto/ 目录下所有 DTO 类是否标注了 @NoArgsConstructor。Jackson 反序列化 @RequestBody 时需要无参构造器，缺少会导致 400 错误。使用 @Data 的类会自动生成 getter/setter 但不会生成无参构造（如果只有 @AllArgsConstructor）"
+
+BE-CS-02:
+  description: "常量类是否 final + 私有构造"
+  level: P2
+  check: "同 BE-QL-38，检查常量类是否 final 且构造器私有。常量类禁止实例化"
+
+BE-CS-03:
+  description: "是否使用了禁止的 Lombok 注解 @SneakyThrows/@Cleanup/@Synchronized"
+  level: P1
+  check: "检查代码中是否使用了 @SneakyThrows、@Cleanup、@Synchronized 注解。这些注解隐藏问题或不如标准写法直观"
+
+BE-CS-04:
+  description: "工具类是否 final + private 构造 + 全部 static 方法"
+  level: P2
+  check: "检查命名为 *Utils 或 *Util 的工具类。必须是 final 类、构造器 private、所有方法 static"
 
 # ═══════════════════════════════════════════════════════════════
-# 数据库规范
+# Result 返回体 (来自 infrastructure/result-guide.md)
+# ═══════════════════════════════════════════════════════════════
+
+BE-RS-01:
+  description: "Controller 返回值是否统一用 Result<T> 包裹"
+  level: P1
+  check: "检查所有 Controller 方法的返回值类型。所有返回值必须用 Result<T> 包裹，禁止直接返回 VO、String、Map 等裸类型"
+
+BE-RS-02:
+  description: "新增/修改/删除操作是否用 Result.success() 无 data 返回"
+  level: P2
+  check: "检查 @PostMapping（新增）、@PutMapping（修改）、@DeleteMapping（删除）方法的返回。应使用 Result.success() 无参数版本，返回 Result<Void>"
+
+BE-RS-03:
+  description: "成功消息是否固定为 \"ok\""
+  level: P2
+  check: "检查 Result.success() 的调用。成功消息固定为 \"ok\"，不返回自定义文本如 \"添加成功\""
+
+# ═══════════════════════════════════════════════════════════════
+# Swagger 文档 (来自 infrastructure/swagger-guide.md)
+# ═══════════════════════════════════════════════════════════════
+
+BE-SW-01:
+  description: "Controller 类是否标注 @Tag(name = \"模块名\")"
+  level: P2
+  check: "检查所有 Controller 类是否标注了 @Tag 注解并包含 name 属性"
+
+BE-SW-02:
+  description: "Controller 方法是否标注 @Operation(summary = \"描述\")"
+  level: P2
+  check: "检查所有 Controller 方法是否标注了 @Operation 注解并包含 summary 属性"
+
+BE-SW-03:
+  description: "DTO/VO 字段是否标注 @Schema(description = \"...\")"
+  level: P2
+  check: "检查 dto/ 和 vo/ 目录下所有类的字段是否标注了 @Schema 注解并包含 description 属性。排除 static final 常量字段"
+
+# ═══════════════════════════════════════════════════════════════
+# 数据库规范 (来自 quality/database-guide.md)
 # ═══════════════════════════════════════════════════════════════
 
 BE-QL-19:
   description: "业务表是否包含必备审计字段"
   level: P1
-  ai:
-    prompt_hint: "检查建表 SQL 和 Entity 类，确认业务表是否包含 id、create_id、create_name、create_time、update_id、update_name、update_time、deleted 等必备审计字段。日志表、多对多中间表、统计表可以不包含。缺少审计字段会导致无法追溯数据变更"
+  check: "检查建表 SQL 和 Entity 类，确认业务表是否包含 id、create_id、create_name、create_time、update_id、update_name、update_time、deleted 等必备审计字段。日志表、多对多中间表可以不包含"
 
 BE-QL-20:
   description: "主键是否使用 BIGINT + 雪花ID"
   level: P1
-  ai:
-    prompt_hint: "检查 Entity 类和建表 SQL，主键 id 应为 BIGINT（Java Long），并使用雪花ID 策略（@TableId(type = IdType.ASSIGN_ID)），不使用自增主键。自增主键在分布式环境下会产生冲突"
+  check: "检查 Entity 类和建表 SQL，主键 id 应为 BIGINT（Java Long），并用雪花ID 策略（@TableId(type = IdType.ASSIGN_ID)），禁止自增主键"
+
+BE-DB-01:
+  description: "是否使用了 AUTO_INCREMENT 自增主键（禁止）"
+  level: P1
+  check: "检查建表 SQL 中是否包含 AUTO_INCREMENT。分布式环境下自增主键会产生冲突，所有表统一使用雪花ID"
+
+BE-DB-02:
+  description: "业务表是否有 deleted 逻辑删除字段"
+  level: P1
+  check: "检查建表 SQL 和 Entity 类，业务表必须包含 deleted 字段（TINYINT DEFAULT 0）。中间表和日志表可以不包含"
+
+BE-DB-03:
+  description: "表名是否统一 sys_ 前缀"
+  level: P1
+  check: "检查建表 SQL 中业务表的命名，是否使用了 sys_ 前缀（如 sys_user、sys_role）。业务表统一前缀便于识别和管理"
+
+BE-DB-04:
+  description: "时间字段是否有双层保障（DB DEFAULT + MetaObjectHandler）"
+  level: P2
+  check: "检查建表 SQL 中 create_time 是否有 DEFAULT CURRENT_TIMESTAMP，update_time 是否有 DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP。同时检查 MetaObjectHandler 是否配置了对应的自动填充"
 
 # ═══════════════════════════════════════════════════════════════
-# 认证安全
+# 认证安全 (来自 auth/)
 # ═══════════════════════════════════════════════════════════════
 
 BE-AU-07:
   description: "登录密码是否使用 BCryptPasswordEncoder 加密"
   level: P0
-  ai:
-    prompt_hint: "检查涉及用户密码操作的 Service 类中，密码是否通过 BCryptPasswordEncoder.encode() 加密后再存储。重点关注 AuthService 的登录/注册逻辑和 UserService 的创建用户/修改密码方法。不处理密码的 Service（如 DictService、MenuService、LogService）不需要此项检查，不应标记。"
+  check: "检查涉及用户密码操作的 Service 类中，密码是否通过 BCryptPasswordEncoder.encode() 加密后再存储。重点关注 AuthService 的登录/注册和 UserService 的创建用户/修改密码方法。不处理密码的 Service 不在此范围"
 
 BE-AU-02:
   description: "多端场景下是否直接使用 StpUtil 而未通过 StpKit 门面"
   level: P1
-  ai:
-    prompt_hint: "先读取 agents/coder/auth/auth-basic.md 确认项目的 Sa-Token 使用策略。如果是纯后台管理项目（无用户端、无多系统），规范明确允许直接使用 StpUtil；如果是多端项目（如同时有 admin 端和 app 端），应使用 StpKit 门面隔离不同端的会话。根据项目实际配置和规范文档判断是否违规，不要一刀切。"
+  check: "先读取 agents/coder/auth/auth-basic.md 确认项目的 Sa-Token 使用策略。纯后台管理项目允许直接使用 StpUtil；多端项目应使用 StpKit 门面隔离不同端的会话。根据项目实际配置判断"
