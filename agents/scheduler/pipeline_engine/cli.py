@@ -56,17 +56,6 @@ def cmd_start(args):
     run_id = state.run_id
     output_dir = state.output_dir
 
-    # 同步更新 code-check-config.yaml，确保 reviewer 的扫描路径和输出目录正确
-    import yaml as _yaml
-    _config_path = Path("agents/reviewer/check_system/code-check-config.yaml")
-    if _config_path.exists():
-        with open(_config_path, "r") as f:
-            _cfg = _yaml.safe_load(f) or {}
-        _cfg["default_scan_path"] = f"../../../{output_dir}src/main/java"
-        _cfg["output_dir"] = f"../../../{state.base_path}/review-output/{state.project_name}/{run_id}/"
-        with open(_config_path, "w") as f:
-            _yaml.dump(_cfg, f, allow_unicode=True, default_flow_style=False)
-
     print(json.dumps({
         "status": "started",
         "pipeline_name": state.pipeline_name,
