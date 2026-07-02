@@ -6,30 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个 Java 后端开发规范仓库，用于约束 AI 代码生成行为。规范的目标技术栈为 Spring Boot 3 + Spring Cloud 微服务。
 
-包含三个阶段的 Agent：
-1. **coder/** — 架构约束：按规范写 Java 代码
-2. **reviewer/check_system/** — 双层校验：程序预检 + AI 检查清单，防止规范遗漏
-3. **reviewer/** — 代码审计：多维度审查 AI 生成的代码
-
-> 未来规划：阶段 1（analyst）—— 需求 → PRD → 技术规格 → API 设计 → 数据库设计。待建设。
+包含四个阶段的 Agent：
+1. **pm/** — 需求沟通：和用户对话澄清需求，产出 spec 设计文档和 plan 实现计划
+2. **coder/** — 架构约束：按规范写 Java 代码
+3. **reviewer/check_system/** — 双层校验：程序预检 + AI 检查清单，防止规范遗漏
+4. **reviewer/** — 代码审计：多维度审查 AI 生成的代码
 
 ## 如何使用
 
 ### 开发流程
 
-🚀 **一键流程**：`/build <需求描述>` — 自动执行 阶段1→阶段2→修复循环  
+🚀 **一键流程**：`/build <需求描述>` — 自动执行 PM（需求对话）→ Coder（代码生成）→ Reviewer（审查修复循环）
   入口：`agents/scheduler/build.skill.md`
 
 ```
-阶段 1（coder）：按设计文档 + 架构规范生成 Java 代码
+阶段 1（PM）：需求沟通 → spec 设计文档 → plan 实现计划
+  入口：agents/pm/pm.skill.md
+
+阶段 2（coder）：读 spec + plan，按架构规范生成 Java 代码
   入口：agents/coder/README.md
 
-阶段 2（check_system）：双层校验 — 代码写完后的第一道防线
-  入口：agents/reviewer/check_system/
-  ├── Layer 1: 程序预检（Python CLI，零 AI Token，确定性匹配）
-  └── Layer 2: AI 检查清单（Review Agent，逐项确认，语义理解）
-
-阶段 3（reviewer）：多维度审查 — 可选的第二道防线
+阶段 3（reviewer）：双层审查 — coder 产出 → 审查 → 修复循环
   入口：agents/reviewer/README.md
 ```
 
@@ -75,8 +72,10 @@ cd agents/reviewer/check_system && python3 -m code_check.cli report \
 
 ```
 agents/
-├── coder/                      # 架构约束
-│   ├── README.md               # 入口索引，按任务类型指引读取
+├── pm/                          # 需求沟通（PM Agent）
+│   └── pm.skill.md              # /pm 斜杠命令定义
+├── coder/                       # 架构约束
+│   ├── README.md                # 入口索引，按任务类型指引读取
 │   ├── architecture/           # 架构规范（包结构、微服务项目结构）
 │   ├── layered/                # 分层规范（Controller、Service、Mapper）
 │   ├── infrastructure/         # 基础设施（Result、Swagger、配置、日志）
@@ -119,3 +118,10 @@ agents/
 - SQL：简单查 LambdaQueryWrapper，复杂/联表/子查询走 XML，禁用 `@Select`
 - 参数：>3 个收敛到 DTO
 - URL：RESTful 复数名词，CRUD 不用动词（非 CRUD 业务动作如取消、重置允许动词）
+
+## 会话自检
+
+- 每次会话开始时，检查项目根目录是否存在 `.pipeline-active` 标记文件
+- 如存在，读取 `review-output/.current-run` 获取 run_id：
+  - 如 `pipeline-state.json` 中 status 为 `running` 或 `pending` → 提醒用户「⚠️ 有一条未完成的流水线 (run_id: {run_id})，可以 `/build --resume {run_id}` 恢复」
+  - 如 status 为 `completed` 或 `error`，或状态文件不存在 → 提醒用户「`.pipeline-active` 是残留标记，建议手动删除：`rm .pipeline-active && rm -f review-output/.current-run`」
