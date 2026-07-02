@@ -12,6 +12,8 @@ defaults:
   timeout: 600s          # 单节点默认超时（秒）
   max_retries: 3         # reviewer → coder 最大循环轮次
   block_on: [P0]         # 触发回退的严重级别列表
+  base_path: "."         # 项目存放位置，默认当前目录
+  project_name: ""       # 项目名称，空则需要交互输入
 
 # ── DAG 节点 ──
 # 每个节点对应一个 Agent。调度 Agent 按 edges 定义的顺序逐个执行。
@@ -21,7 +23,7 @@ nodes:
     agent: coder
     description: "根据需求生成 Spring Boot 3 Java 代码，遵守 agents/coder/ 下的所有规范"
     prompt_template: |
-      开始工作前，先读取 review-output/.current-run 获取 output_dir 和 target_dir。
+      开始工作前，先读取 review-output/.current-run 获取 output_dir 和 scan_path。
 
       你需要根据用户需求生成 Java 代码。
 
@@ -40,15 +42,15 @@ nodes:
 
       {review_context}
 
-      ⚠️ 边界约束：你只能修改 {target_dir}/src/main/java/ 目录下的 Java 文件和 {target_dir}/pom.xml（如需添加依赖）。禁止修改 agents/ 或 hooks/ 目录下的任何文件。这些是审查系统的规则和配置，修改它们会导致流水线结果不可信。
+      ⚠️ 边界约束：你只能修改 {output_dir}/src/main/java/ 目录下的 Java 文件和 {output_dir}/pom.xml（如需添加依赖）。禁止修改 agents/ 或 hooks/ 目录下的任何文件。这些是审查系统的规则和配置，修改它们会导致流水线结果不可信。
 
       代码输出目录：从 review-output/.current-run 读取 scan_path
-      将生成的 Java 代码写入 {target_dir}/src/main/java 对应包路径下。
+      将生成的 Java 代码写入 {output_dir}/src/main/java 对应包路径下。
     inputs:
       - requirement: "${user_input}"
       - review_context: "review-output/{run_id}/ 目录下的审查结果（仅修复轮次时存在）"
     outputs:
-      - target_dir: "{target_dir}/src/main/java"
+      - output_dir: "{output_dir}/src/main/java"
     timeout: 900s
     depends_on: []          # 起始节点，无依赖
 
@@ -61,13 +63,13 @@ nodes:
 
       你是 review agent。请严格按以下步骤执行，不可跳过任何步骤。
 
-      1. 调用 MCP tool `fuck-u-code analyze` 扫描 {target_dir}/src/main/java
+      1. 调用 MCP tool `fuck-u-code analyze` 扫描 {output_dir}/src/main/java
          产出 quality.json，保存到 review-output/{run_id}/quality.json
          （如 MCP 调用失败，记录警告后继续第 2 步）
 
       2. 读取 agents/reviewer/check_system/rules/ai-checklist.yaml（50条审查清单）
          读取 review-output/{run_id}/quality.json（如存在）
-         对 {target_dir}/src/main/java 下所有 Java 文件执行统一审查：
+         对 {output_dir}/src/main/java 下所有 Java 文件执行统一审查：
          - 逐条对照 ai-checklist 检查规范合规 → spec_violations[]
          - 对 quality.json 标红的高分文件做深度分析 → quality_issues[]
 
@@ -78,7 +80,7 @@ nodes:
 
       返回: REVIEW_PASSED / REVIEW_FAILED / REVIEW_ERROR
     inputs:
-      - coder_output: "${coder.outputs.target_dir}"
+      - coder_output: "${coder.outputs.output_dir}"
     outputs:
       - pre_check: "review-output/{run_id}/pre-check-result.json"
       - ai_review: "review-output/{run_id}/review-result.json"
