@@ -21,6 +21,8 @@ nodes:
     agent: coder
     description: "根据需求生成 Spring Boot 3 Java 代码，遵守 agents/coder/ 下的所有规范"
     prompt_template: |
+      开始工作前，先读取 review-output/.current-run 获取 output_dir 和 target_dir。
+
       你需要根据用户需求生成 Java 代码。
 
       用户需求：
@@ -40,7 +42,7 @@ nodes:
 
       ⚠️ 边界约束：你只能修改 {target_dir}/src/main/java/ 目录下的 Java 文件和 {target_dir}/pom.xml（如需添加依赖）。禁止修改 agents/ 或 hooks/ 目录下的任何文件。这些是审查系统的规则和配置，修改它们会导致流水线结果不可信。
 
-      代码输出目录：{target_dir}/src/main/java
+      代码输出目录：从 review-output/.current-run 读取 scan_path
       将生成的 Java 代码写入 {target_dir}/src/main/java 对应包路径下。
     inputs:
       - requirement: "${user_input}"
@@ -55,6 +57,8 @@ nodes:
     agent: reviewer
     description: "对 coder 产出的代码执行双层审查：Layer 1 Python CLI 预检 + Layer 2 AI 语义检查"
     prompt_template: |
+      开始工作前，先读取 review-output/.current-run 获取 output_dir 和 scan_path。
+
       你是 review agent。请严格按以下步骤执行，不可跳过任何步骤。
 
       1. 调用 MCP tool `fuck-u-code analyze` 扫描 {target_dir}/src/main/java
