@@ -1,2 +1,3 @@
-tree-sitter>=0.23.0
-tree-sitter-java>=0.23.0
+# 审查系统 Python 依赖
+# 当前无外部依赖（PyYAML 由 scheduler/requirements.txt 管理）
+# 在此添加 check_system 专属依赖
