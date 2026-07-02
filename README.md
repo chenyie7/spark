@@ -341,7 +341,7 @@ python3 -m code_check.cli report \
 │  Phase 1: Coder  │  读取 agents/coder/README.md（规范索引）
 │  Agent           │  → 按任务类型跳转规范文件
 │                  │  → 生成 Controller/Service/Mapper/Entity/DTO/VO
-│                  │  → 写入 target_dir/src/main/java
+│                  │  → 写入 output_dir/src/main/java
 └────────┬────────┘
          │
          ▼
@@ -561,7 +561,7 @@ BE-MP-01:
 python3 -m pipeline_engine.cli start \
   --pipeline agents/scheduler/pipeline.yaml \
   --state-file review-output/pipeline-state.json \
-  --target-dir "admin-test-01" \
+  --base-path "." --project-name "admin-test-01" \
   --requirement "实现用户登录功能"
 
 # 获取下一个待执行节点（返回 JSON，含渲染后的 prompt）
@@ -607,7 +607,7 @@ nodes:
     prompt_template: |
       根据用户需求生成 Java 代码...
       用户需求：{requirement}
-      代码输出目录：{target_dir}/src/main/java
+      代码输出目录：{output_dir}/src/main/java
     timeout: 900s
 
   - id: reviewer
@@ -631,7 +631,7 @@ edges:
 - **条件流转**：根据 `agent_verdict`（REVIEW_PASSED / REVIEW_FAILED / REVIEW_ERROR）决定下一步
 - **修复上下文注入**：`{review_context}` 和 `{run_id}` 模板变量，在修复轮次自动注入前一轮的审查结果
 - **状态持久化**：JSON 文件记录完整状态，支持 `/build --continue` 断点续接
-- **边界约束**：coder 只能修改 `{target_dir}/` 下的代码，禁止修改 `agents/` 审查系统文件
+- **边界约束**：coder 只能修改 `{output_dir}/` 下的代码，禁止修改 `agents/` 审查系统文件
 
 ---
 
