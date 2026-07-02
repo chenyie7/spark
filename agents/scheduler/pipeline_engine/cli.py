@@ -30,11 +30,20 @@ def cmd_start(args):
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # project_name 为必填项
+    if not args.project_name:
+        print(json.dumps({
+            "status": "error",
+            "message": "project_name 为必填项。请使用 --project-name 指定项目名称。",
+        }))
+        sys.exit(1)
+
     engine = PipelineEngine(config, state_path)
     try:
-        state = engine.start(requirement=args.requirement, target_dir=args.target_dir)
+        state = engine.start(requirement=args.requirement,
+                             base_path=args.base_path,
+                             project_name=args.project_name)
     except RuntimeError as e:
-        # 流水线已在运行 → 返回当前状态信息
         existing = engine.status()
         print(json.dumps({
             "status": "already_running",
@@ -44,7 +53,8 @@ def cmd_start(args):
         }))
         sys.exit(0)
 
-    run_id = state.run_id  # 由 PipelineState.start() 生成，不再覆盖
+    run_id = state.run_id
+    output_dir = state.output_dir
 
     # 同步更新 code-check-config.yaml，确保 reviewer 的扫描路径和输出目录正确
     import yaml as _yaml
@@ -52,8 +62,8 @@ def cmd_start(args):
     if _config_path.exists():
         with open(_config_path, "r") as f:
             _cfg = _yaml.safe_load(f) or {}
-        _cfg["default_scan_path"] = f"../../../{state.target_dir}/src/main/java"
-        _cfg["output_dir"] = f"../../../review-output/{state.run_id}/"
+        _cfg["default_scan_path"] = f"../../../{output_dir}src/main/java"
+        _cfg["output_dir"] = f"../../../{state.base_path}/review-output/{state.project_name}/{run_id}/"
         with open(_config_path, "w") as f:
             _yaml.dump(_cfg, f, allow_unicode=True, default_flow_style=False)
 
@@ -62,7 +72,9 @@ def cmd_start(args):
         "pipeline_name": state.pipeline_name,
         "round": 0,
         "run_id": run_id,
-        "target_dir": state.target_dir,
+        "base_path": state.base_path,
+        "project_name": state.project_name,
+        "output_dir": output_dir,
         "max_retries": config.defaults.max_retries,
         "message": f"流水线 '{config.name}' 已启动。",
     }))
@@ -175,8 +187,10 @@ def main():
     p_start.add_argument("--state-file", default="review-output/pipeline-state.json",
                          help="状态文件路径")
     p_start.add_argument("--requirement", required=True, help="用户需求描述")
-    p_start.add_argument("--target-dir", default=".",
-                         help="模块根目录（相对于项目根）")
+    p_start.add_argument("--base-path", default=".",
+                         help="项目存放位置（相对于项目根）")
+    p_start.add_argument("--project-name", default="",
+                         help="项目名称（必填）")
 
     # ── next ──
     p_next = sub.add_parser("next", help="获取下一个要执行的节点")
