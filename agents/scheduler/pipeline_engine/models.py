@@ -11,15 +11,15 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
-def _generate_run_id(target_dir: str = ".") -> str:
-    """生成 run_id，格式: YYYYMMDDHHmmss[-target_dir]
+def _generate_run_id(project_name: str = "") -> str:
+    """生成 run_id，格式: YYYYMMDDHHmmss[-project_name]
 
-    target_dir 为 "." 时不加后缀，如 "20260702120000"。
-    target_dir 为 "admin-test" 时加后缀，如 "20260702120000-admin-test"。
+    project_name 为空时不加后缀，如 "20260702120000"。
+    project_name 为 "order-service" 时加后缀，如 "20260702120000-order-service"。
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    if target_dir and target_dir != ".":
-        return f"{timestamp}-{target_dir}"
+    if project_name:
+        return f"{timestamp}-{project_name}"
     return timestamp
 
 
@@ -308,24 +308,32 @@ class PipelineState:
     started_at: str = ""
     updated_at: str = ""
     run_id: str = ""
-    target_dir: str = "."   # 模块根目录，相对于项目根
+    base_path: str = "."        # 项目存放位置
+    project_name: str = ""      # 项目名称（必填）
+    output_dir: str = ""        # 拼接结果：{base_path}/{project_name}/
 
     def _touch(self):
         """更新 updated_at 时间戳。"""
         self.updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def start(self, requirement: str = "", target_dir: str = "."):
+    def start(self, requirement: str = "", base_path: str = ".", project_name: str = ""):
         """将流水线标记为待命（PENDING），生成 run_id，记录开始时间。
 
         不直接进入 RUNNING——由 next() 在首次派发节点时完成状态转移。
         这样 Phase 1 可以先拿到 run_id 而不触发流水线执行。
         """
         self.requirement = requirement
-        self.target_dir = target_dir
+        self.base_path = base_path
+        self.project_name = project_name
+        # 拼接输出目录
+        if project_name:
+            self.output_dir = f"{base_path.rstrip('/')}/{project_name}/"
+        else:
+            self.output_dir = base_path if base_path != "." else "."
         self.status = PipelineStatus.PENDING
         self.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         if not self.run_id:
-            self.run_id = _generate_run_id(target_dir)
+            self.run_id = _generate_run_id(project_name)
         self._touch()
 
     def complete(self):
@@ -386,7 +394,9 @@ class PipelineState:
             started_at=d.get("started_at", ""),
             updated_at=d.get("updated_at", ""),
             run_id=d.get("run_id", ""),
-            target_dir=d.get("target_dir") if isinstance(d.get("target_dir"), str) else ".",
+            base_path=d.get("base_path", "."),
+            project_name=d.get("project_name", ""),
+            output_dir=d.get("output_dir", ""),
         )
 
     def to_dict(self) -> dict:
@@ -401,7 +411,9 @@ class PipelineState:
             "started_at": self.started_at,
             "updated_at": self.updated_at,
             "run_id": self.run_id,
-            "target_dir": self.target_dir,
+            "base_path": self.base_path,
+            "project_name": self.project_name,
+            "output_dir": self.output_dir,
         }
 
 
