@@ -221,7 +221,7 @@ python3 -m pipeline_engine.cli report \
 |------|------|
 | `/build` 无参数 | 「请描述你要构建的需求，我会和你讨论具体内容后开始开发。」 |
 | PM 阶段用户中断 | pm-context.json 保留，`/build --pm <run_id>` 恢复 |
-| `/build --continue` 无状态 | 「没有可续接的流水线，请使用 /build <需求> 开始新的构建」 |
+| `/build --resume` 无状态 | 「没有可续接的流水线，请使用 /build <需求> 开始新的构建」 |
 | pipeline_engine 命令失败 | 检查 python3 和 PyYAML 是否可用，展示 stderr |
 | `next` 返回 error | 展示 message，询问是否 reset 重来 |
 | 子 Agent 超时 | report status=error，让调度器决定下一步 |
