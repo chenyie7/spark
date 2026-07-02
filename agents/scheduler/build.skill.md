@@ -5,7 +5,7 @@ description: 自动化代码生成流水线 — PM 需求沟通 → coder 生成
 
 # /build — 自动化代码生成流水线
 
-用法：`/build <需求描述> [--target-dir <目录>]`
+用法：`/build <需求描述> [--base-path <目录>] [--project-name <名称>]`
 恢复开发：`/build --resume <run_id>`
 恢复需求对话：`/build --pm <run_id>`
 
@@ -43,7 +43,8 @@ PM 阶段（需求对话）在主线运行，用户交互完成后自动衔接 p
    python3 -m pipeline_engine.cli start \
      --pipeline agents/scheduler/pipeline.yaml \
      --state-file review-output/.pipeline-state.tmp \
-     --target-dir "{target_dir}" \
+     --base-path "{base_path}" \
+     --project-name "{project_name}" \
      --requirement "placeholder")
 
    run_id=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin)['run_id'])")
@@ -61,7 +62,9 @@ PM 阶段（需求对话）在主线运行，用户交互完成后自动衔接 p
    {
      "run_id": "{run_id}",
      "status": "in_progress",
-     "target_dir": "{target_dir}",
+     "base_path": "{base_path}",
+     "project_name": "{project_name}",
+     "output_dir": "{base_path}/{project_name}/",
      "requirement": "{用户原始需求}",
      "spec_file": "",
      "plan_file": ""
@@ -98,7 +101,7 @@ PM 阶段（需求对话）在主线运行，用户交互完成后自动衔接 p
 
 ### 步骤 2.1: 准备
 
-从 `review-output/{run_id}/pm-context.json` 读取 spec_file、plan_file、target_dir、原始需求。
+从 `review-output/{run_id}/pm-context.json` 读取 spec_file、plan_file、base_path、project_name、output_dir、原始需求。
 
 ### 步骤 2.2: 激活流水线保护
 
@@ -121,9 +124,11 @@ touch .pipeline-active
 cat > review-output/.current-run <<EOF
 {
   "run_id": "{run_id}",
-  "target_dir": "{target_dir}",
-  "output_dir": "review-output/{run_id}/",
-  "scan_path": "{target_dir}/src/main/java"
+  "base_path": "{base_path}",
+  "project_name": "{project_name}",
+  "output_dir": "{base_path}/{project_name}/",
+  "scan_path": "{base_path}/{project_name}/src/main/java",
+  "review_dir": "{base_path}/review-output/{project_name}/{run_id}/"
 }
 EOF
 ```
@@ -187,11 +192,26 @@ python3 -m pipeline_engine.cli report \
 
 ## Phase 0: 参数解析
 
-`--target-dir` 参数解析：
-- 如果用户指定了 `--target-dir <值>`，直接使用该值
-- 如果未指定，询问用户一次：「是否需要自定义代码输出目录？（默认: 项目根目录）」
-  - 用户输入了目录名 → 使用
-  - 用户直接回车/说"不" → 使用默认值 "."
+`--base-path` 参数解析：
+- 如果用户指定了 `--base-path <值>`，直接使用该值
+- 如果未指定，使用 pipeline.yaml defaults 中的 base_path（默认 "."）
+
+`--project-name` 参数解析：
+- 如果用户指定了 `--project-name <值>`，直接使用该值
+- 如果未指定 → **必须交互询问用户**（不可跳过）：
+  - 「请输入项目名称：」
+  - 用户输入为空 → 再次询问，不允许跳过
+
+拼接确认：
+- 展示所有路径给用户确认后才进入 PM 阶段：
+  「确认：
+    - 项目位置：{base_path}/
+    - 项目名称：{project_name}
+    - 代码输出：{base_path}/{project_name}/src/main/java/
+    - 审查数据：{base_path}/review-output/{project_name}/
+    
+    是否继续？」
+  - 用户否定 → 重新输入参数
 
 ---
 
