@@ -67,7 +67,7 @@ nodes:
          产出 quality.json，保存到 review-output/{run_id}/quality.json
          （如 MCP 调用失败，记录警告后继续第 2 步）
 
-      2. 读取 agents/reviewer/check_system/rules/ai-checklist.yaml（50条审查清单）
+      2. 读取 agents/reviewer/check_system/rules/ai-checklist.yaml（涵盖结构、质量、认证、基础设施等多维度审查清单）
          读取 review-output/{run_id}/quality.json（如存在）
          对 {output_dir}/src/main/java 下所有 Java 文件执行统一审查：
          - 逐条对照 ai-checklist 检查规范合规 → spec_violations[]
