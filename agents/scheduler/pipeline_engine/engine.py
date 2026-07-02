@@ -42,8 +42,12 @@ class PipelineEngine:
 
     # ── 公开 API ────────────────────────────────────────────────────
 
-    def start(self, requirement: str) -> PipelineState:
+    def start(self, requirement: str = "", target_dir: str = ".") -> PipelineState:
         """初始化流水线并持久化状态。
+
+        Args:
+            requirement: 用户需求描述。
+            target_dir: 模块根目录（相对于项目根）。
 
         Raises:
             RuntimeError: 如果已有流水线在运行中（状态文件存在且状态为
@@ -58,8 +62,7 @@ class PipelineEngine:
                     f"或调用 'next' 继续。"
                 )
         self.state = PipelineState(pipeline_name=self.config.name)
-        self.state.requirement = requirement
-        self.state.start()
+        self.state.start(requirement=requirement, target_dir=target_dir)
         self._save_state()
         return self.state
 
