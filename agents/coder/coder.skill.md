@@ -5,7 +5,7 @@ description: 按需加载规范，逐层生成 Spring Boot 3 Java 代码
 
 # /coder — 代码生成
 
-用法：`/coder <spec_path> <plan_path> [--target-dir <dir>]`
+用法：`/coder <spec_path> <plan_path>`
 
 ## 角色
 
@@ -76,5 +76,6 @@ d. **声明完成**：输出 `LAYER_DONE: {层名}`，然后进入下一层。
 
 ## 边界约束
 
-- 只能修改 `{target_dir}/src/main/java/` 下的 Java 文件和 `{target_dir}/pom.xml`（如需添加依赖）
-- 代码输出到 `{target_dir}/src/main/java` 对应包路径下
+- 从 `review-output/.current-run` 读取 `output_dir`，获取代码输出路径
+- 只能修改 `{output_dir}/src/main/java/` 下的 Java 文件和 `{output_dir}/pom.xml`（如需添加依赖）
+- 代码输出到 `{output_dir}/src/main/java` 对应包路径下
