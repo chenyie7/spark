@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 包含四个阶段的 Agent：
 1. **pm/** — 需求沟通：和用户对话澄清需求，产出 spec 设计文档和 plan 实现计划
 2. **coder/** — 架构约束：按规范写 Java 代码
-3. **reviewer/check_system/** — 双层校验：程序预检 + AI 检查清单，防止规范遗漏
+3. **reviewer/check_system/** — 双层校验：fuck-u-code MCP 静态分析 + AI 统一审查，防止规范遗漏
 4. **reviewer/** — 代码审计：多维度审查 AI 生成的代码
 
 ## 如何使用
@@ -30,36 +30,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   入口：agents/reviewer/README.md
 ```
 
-### 使用 CLI 进行程序预检
-
-在编写 Java 代码完成后，在提交给 reviewer 之前运行：
-
-```bash
-# 从项目根目录运行
-cd agents/reviewer/check_system && python3 -m code_check.cli scan <目标目录>
-
-# 例如
-cd agents/reviewer/check_system && python3 -m code_check.cli scan ../../../src/main/java
-```
-
-**行为：**
-- 自动读取 `agents/reviewer/check_system/code-check-config.yaml` 配置
-- 扫描所有 `.java` 文件，执行 9 项程序检查
-- 无阻断问题 → exit 0，输出 `review-output/pre-check-result.json`
-- 有阻断问题 → exit 1，输出 `review-output/pre-check-report.md`
-
-**阻断策略**（在 `code-check-config.yaml` 中配置）：
-- `strict`：有 P0 或 P1 → 阻断，Review Agent 不启动
-- `normal`：有 P0 → 阻断
-- `loose`：仅 P0 阻断
-
 ### 生成最终报告
 
 ```bash
 cd agents/reviewer/check_system && python3 -m code_check.cli report \
-  --pre review-output/pre-check-result.json \
-  --ai review-output/review-result.json \
-  --output review-output/final-review-report.md
+  --quality review-output/{run_id}/quality.json \
+  --findings review-output/{run_id}/findings.json \
+  --output review-output/{run_id}/final-review-report.md
 ```
 
 ### 已有设计文档时
@@ -90,17 +67,12 @@ agents/
 │   ├── infra-check.md          # 基础设施审查（Swagger、配置、Redis、国际化）
 │   └── check_system/           # 双层校验系统（Python CLI）
 │       ├── code_check/         # Python 包
-│       │   ├── models.py       # 数据模型（dataclasses + enums）
-│       │   ├── config.py       # 配置加载器（PyYAML）
-│       │   ├── scanner.py      # Java 文件扫描引擎（3 种扫描器）
-│       │   ├── reporter.py     # 报告生成器（JSON → Markdown）
-│       │   └── cli.py          # CLI 入口（argparse scan + report）
-│       ├── tests/              # 65 个测试
-│       ├── rules/              # 检查规则配置
-│       │   ├── program-checks.yaml  # 程序检查规则（9 项确定性规则）
-│       │   └── ai-checklist.yaml    # AI 检查清单（17 项语义规则）
-│       ├── hooks/              # Pre/Post hook 脚本
-│       └── code-check-config.yaml   # CLI 默认配置
+│       │   ├── cli.py          # CLI 入口 — report 命令
+│       │   ├── models.py       # 数据模型
+│       │   └── reporter.py     # 报告渲染器（JSON → Markdown）
+│       ├── tests/              # 单元测试
+│       └── rules/              # 检查规则配置
+│           └── ai-checklist.yaml    # AI 检查清单
 └── scheduler/                   # 调度器
     ├── build.skill.md           # /build 斜杠命令定义
     └── pipeline.yaml            # Coder-Reviewer 流水线 DAG 配置
