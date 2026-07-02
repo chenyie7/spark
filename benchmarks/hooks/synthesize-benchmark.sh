@@ -10,6 +10,11 @@
 
 set -euo pipefail
 
+# 仅在流水线运行时生效，非流水线场景静默跳过
+if [ ! -f "${CLAUDE_PROJECT_DIR:-.}/.pipeline-active" ]; then
+    exit 0
+fi
+
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 DUMP_DIR="$PROJECT_DIR/benchmarks/dumps"
 

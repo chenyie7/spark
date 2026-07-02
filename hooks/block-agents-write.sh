@@ -5,6 +5,11 @@
 
 set -euo pipefail
 
+# 仅在流水线运行时生效，非流水线场景静默跳过
+if [ ! -f "${CLAUDE_PROJECT_DIR:-.}/.pipeline-active" ]; then
+    exit 0
+fi
+
 # 从 CLAUDE_TOOL_INPUT 环境变量获取 file_path，并解析为规范绝对路径
 RESOLVED=$(printf '%s' "${CLAUDE_TOOL_INPUT:-}" | python3 -c "
 import os, sys, json
@@ -24,6 +29,14 @@ if [ -z "$RESOLVED" ]; then
     # 无法解析 file_path，放行（不做误杀）
     exit 0
 fi
+
+# 白名单: 允许写入特定 agent 目录（新增 agent 的安装和维护）
+PM_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}/agents/pm/"
+case "$RESOLVED" in
+    "$PM_DIR"*)
+        exit 0
+        ;;
+esac
 
 # 检查是否落在 agents/ 目录内（与规范绝对路径比较，防止 ../ 绕过）
 AGENTS_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}/agents/"
