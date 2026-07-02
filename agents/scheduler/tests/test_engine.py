@@ -15,7 +15,7 @@ class TestPipelineEngineStart:
         config = load_pipeline(sample_pipeline_path)
         engine = PipelineEngine(config, state_path)
         state = engine.start("build login feature")
-        assert state.status == PipelineStatus.RUNNING
+        assert state.status == PipelineStatus.PENDING  # start 后为待命状态
         assert state.requirement == "build login feature"
         assert state_path.exists()
 
@@ -240,7 +240,7 @@ class TestPipelineEngineStatus:
         engine.start("test")
         state = engine.status()
         assert state.pipeline_name == "test-pipeline"
-        assert state.status == PipelineStatus.RUNNING
+        assert state.status == PipelineStatus.PENDING  # start 后为待命
 
 
 class TestPipelineEngineReset:
