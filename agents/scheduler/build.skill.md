@@ -1,79 +1,197 @@
 ---
 name: build
-description: 自动化代码生成流水线 — coder 生成 → reviewer 审查 → 自动修复循环
+description: 自动化代码生成流水线 — PM 需求沟通 → coder 生成 → reviewer 审查 → 自动修复循环
 ---
 
 # /build — 自动化代码生成流水线
 
 用法：`/build <需求描述> [--target-dir <目录>]`
-续接：`/build --continue`
+恢复开发：`/build --resume <run_id>`
+恢复需求对话：`/build --pm <run_id>`
 
-通过 `pipeline_engine` CLI 解析 `pipeline.yaml` 中的 DAG 定义，步进执行。
+PM 阶段（需求对话）在主线运行，用户交互完成后自动衔接 pipeline_engine 管理的 coder → reviewer 阶段。
 
 ---
 
-## 执行流程
+## 入口判断
 
-### Phase 0: 初始化
+```
+/build 调用
+  │
+  ├── --resume <run_id>  → 跳过 PM，进入「Phase 2: Coder/Reviewer 自动流水线」
+  │
+  ├── --pm <run_id>      → 恢复 PM 需求对话（继续未完成的 PM 阶段）
+  │
+  ├── 有需求描述          → 「Phase 1: PM 需求对话」
+  │     └── PM 完成 → 提示用户运行 --resume → Phase 2
+  │
+  └── 无参数              → 提示用户描述需求
+        └── 用户回复需求 → 「Phase 1: PM 需求对话」
+              └── PM 完成 → 提示用户运行 --resume → Phase 2
+```
 
-1. 如果用户使用了 `--continue`：
-   - 检测 `review-output/pipeline-state.json` 是否存在
-   - 存在 → 直接进入 Phase 1 循环
-   - 不存在 → 提示「没有可续接的流水线，请使用 /build <需求> 开始新的构建」
-2. 解析用户输入中的 `--target-dir` 参数：
-   - 如果用户指定了 `--target-dir <值>`，直接使用该值
-   - 如果未指定，询问用户一次：
-     「是否需要自定义代码输出目录？（当前默认: 项目根目录 src/main/java）
-       输入模块目录名或直接回车跳过：」
-     ├─ 用户输入了目录 → 使用该目录
-     └─ 用户直接回车/说"不"/"否" → 使用默认值 "."
-3. 调用：
+---
+
+## Phase 1: PM 需求对话
+
+**触发条件:** `/build "需求"` 或 `/build`（无参数，用户后续输入需求后自动触发）
+
+1. 调用 pipeline-engine start 获取 run_id（唯一生成入口）：
+
    ```bash
+   result=$(PYTHONPATH="${PWD}/agents/scheduler:${PWD}/agents/reviewer/check_system" \
    python3 -m pipeline_engine.cli start \
      --pipeline agents/scheduler/pipeline.yaml \
-     --state-file review-output/pipeline-state.json \
-     --target-dir "<目标目录>" \
-     --requirement "{用户需求}"
+     --state-file review-output/.pipeline-state.tmp \
+     --target-dir "{target_dir}" \
+     --requirement "placeholder")
+
+   run_id=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin)['run_id'])")
    ```
-4. 向用户报告启动信息（pipeline 名称、目标目录、max_retries 等）
 
-### Phase 1: 执行循环
+   然后将临时状态文件移至最终位置：
 
+   ```bash
+   mkdir -p "review-output/${run_id}"
+   mv review-output/.pipeline-state.tmp "review-output/${run_id}/pipeline-state.json"
+   ```
+
+2. 写入 `review-output/{run_id}/pm-context.json`：
+   ```json
+   {
+     "run_id": "{run_id}",
+     "status": "in_progress",
+     "target_dir": "{target_dir}",
+     "requirement": "{用户原始需求}",
+     "spec_file": "",
+     "plan_file": ""
+   }
+   ```
+4. 加载 PM Agent 流程（参考 agents/pm/pm.skill.md），以用户需求为起点进行对话：
+   - 探索项目上下文（现有代码、CLAUDE.md、agents/coder/ 规范、已有设计文档）
+   - 逐轮澄清需求（一次只问一个问题、优先多选、YAGNI）
+   - 提出 2-3 种方案对比
+   - 逐节确认设计（架构 → 数据模型 → API → 数据流 → 错误处理 → 测试）
+   - 输出 spec: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+   - spec 自检（placeholder、矛盾、歧义、范围）
+   - 用户 review spec → 修改或确认
+   - 输出 plan: `docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`
+   - plan 自检（spec 覆盖、placeholder、类型一致性）
+5. 更新 `pm-context.json`：status → "done"，记录 spec_file 和 plan_file 绝对路径
+6. **简明提示当前阶段完成，下一阶段需要的命令：**
+
+   ```
+   需求梳理完毕。
+   spec: docs/superpowers/specs/<文件名>.md
+   plan: docs/superpowers/plans/<文件名>.md
+   
+   运行 /build --resume {run_id} 开始开发
+   ```
+
+7. 等待用户输入恢复命令
+
+---
+
+## Phase 2: Coder / Reviewer 自动流水线
+
+**触发条件:** `/build --resume <run_id>`
+
+### 步骤 2.1: 准备
+
+从 `review-output/{run_id}/pm-context.json` 读取 spec_file、plan_file、target_dir、原始需求。
+
+### 步骤 2.2: 激活流水线保护
+
+确认状态文件存在：
+
+```bash
+if [ ! -f "review-output/{run_id}/pipeline-state.json" ]; then
+    echo "错误: 未找到流水线状态文件。请先运行 /build <需求> 完成 Phase 1。"
+    exit 1
+fi
 ```
-loop:
-  1. 调用:
-     python3 -m pipeline_engine.cli next \
-       --pipeline agents/scheduler/pipeline.yaml \
-       --state-file review-output/pipeline-state.json
 
-  2. 解析返回 JSON:
-     ┌──────────────────────────────────────────────────────┐
-     │ action=="done"  → 退出循环，展示完成信息               │
-     │ action=="error" → 退出循环，展示错误信息               │
-     │ action=="execute" → 对 nodes 中的每个节点:            │
-     │   a. 通过 Agent 工具启动子 Agent（subagent_type 使用  │
-     │      节点返回的 agent_type）                          │
-     │   b. prompt 使用节点返回的已渲染 prompt               │
-     │   c. 超时参考节点返回的 timeout 字段                   │
-     │   d. 等待子 Agent 完成，提取其最终回复                 │
-     │   e. 判断 verdict（如回复中含 REVIEW_PASSED /          │
-     │      REVIEW_FAILED / REVIEW_ERROR）                   │
-     │   f. python3 -m pipeline_engine.cli report \         │
-     │        --pipeline agents/scheduler/pipeline.yaml \   │
-     │        --state-file review-output/pipeline-state.json\│
-     │        --node {node_id} \                            │
-     │        --status {success|failed|error} \              │
-     │        --summary "{简要描述}" \                       │
-     │        --verdict {REVIEW_PASSED|REVIEW_FAILED|REVIEW_ERROR|空} │
-     │   g. 如果有多个 node → 可以并行启动（Agent 工具并发）   │
-     └──────────────────────────────────────────────────────┘
-  3. 回到步骤 1
+在进入执行循环前，创建标记文件和上下文文件：
+
+```bash
+# 激活 hook（PreToolUse/PostToolUse/Stop 开始生效）
+touch .pipeline-active
+
+# 写入当前 run 上下文，Agent 启动时读取
+cat > review-output/.current-run <<EOF
+{
+  "run_id": "{run_id}",
+  "target_dir": "{target_dir}",
+  "output_dir": "review-output/{run_id}/",
+  "scan_path": "{target_dir}/src/main/java"
+}
+EOF
 ```
 
-### 终止条件
+### 步骤 2.3: 立即进入执行循环
 
-- `next` 返回 `action=="done"` → 从 `start` 命令返回的 `run_id` 构造路径，读取 `review-output/{run_id}/final-review-report.md` 展示结果
-- `next` 返回 `action=="error"` → 展示错误信息，提示用户介入
+**以下步骤必须连续执行，直到 `next` 返回 `done` 或 `error`：**
+
+**第 1 步：获取下一个任务**
+
+运行 pipeline_engine next：
+
+```bash
+PYTHONPATH="${PWD}/agents/scheduler:${PWD}/agents/reviewer/check_system" \
+python3 -m pipeline_engine.cli next \
+  --pipeline agents/scheduler/pipeline.yaml \
+  --state-file review-output/{run_id}/pipeline-state.json
+```
+
+**第 2 步：根据返回 JSON 的 `action` 字段分流**
+
+- `action == "done"` → **清理标记文件：** `rm -f .pipeline-active && rm -f review-output/.current-run`。然后读取 `review-output/{run_id}/final-review-report.md` 展示结果。流水线完成。
+- `action == "error"` → **清理标记文件：** `rm -f .pipeline-active && rm -f review-output/.current-run`。展示 `message` 内容，提示用户介入。
+- `action == "execute"` → **继续执行第 3 步。**
+
+**第 3 步：启动子 Agent（对 `nodes` 数组中的每个节点）**
+
+对返回 JSON 中 `nodes` 数组的每一项，执行以下子步骤：
+
+a. 使用 Agent 工具启动子 Agent：
+   - `subagent_type` 使用节点返回的 `agent_type`
+   - `prompt` 使用节点返回的已渲染 `prompt`
+   - 超时参考节点返回的 `timeout`
+
+b. 等待子 Agent 完成，提取最终回复
+
+c. 判断 verdict：
+   - 回复含 `REVIEW_PASSED` / `REVIEW_FAILED` / `REVIEW_ERROR` → 提取为 verdict
+   - 非 reviewer 节点 → verdict 留空
+
+d. 向 pipeline_engine 报告结果：
+
+```bash
+PYTHONPATH="${PWD}/agents/scheduler:${PWD}/agents/reviewer/check_system" \
+python3 -m pipeline_engine.cli report \
+  --pipeline agents/scheduler/pipeline.yaml \
+  --state-file review-output/{run_id}/pipeline-state.json \
+  --node {node_id} \
+  --status {success|failed|error} \
+  --summary "{简要描述}" \
+  --verdict {REVIEW_PASSED|REVIEW_FAILED|REVIEW_ERROR|空}
+```
+
+**如果有多个 node → 并行启动（Agent 工具并发调用）**
+
+**第 4 步：回到第 1 步**
+
+循环直到 `action` 为 `done` 或 `error`。
+
+---
+
+## Phase 0: 参数解析
+
+`--target-dir` 参数解析：
+- 如果用户指定了 `--target-dir <值>`，直接使用该值
+- 如果未指定，询问用户一次：「是否需要自定义代码输出目录？（默认: 项目根目录）」
+  - 用户输入了目录名 → 使用
+  - 用户直接回车/说"不" → 使用默认值 "."
 
 ---
 
@@ -81,10 +199,10 @@ loop:
 
 | 场景 | 动作 |
 |------|------|
-| `/build` 无参数 | 提示「请输入需求描述，如：/build 实现用户登录功能」 |
-| 需求模糊 | 追问 1-2 个澄清问题 |
-| 调度器命令失败 | 检查 python3 和 PyYAML 是否可用，展示 stderr |
+| `/build` 无参数 | 「请描述你要构建的需求，我会和你讨论具体内容后开始开发。」 |
+| PM 阶段用户中断 | pm-context.json 保留，`/build --pm <run_id>` 恢复 |
+| `/build --continue` 无状态 | 「没有可续接的流水线，请使用 /build <需求> 开始新的构建」 |
+| pipeline_engine 命令失败 | 检查 python3 和 PyYAML 是否可用，展示 stderr |
 | `next` 返回 error | 展示 message，询问是否 reset 重来 |
-| 用户 Ctrl+C | 状态文件保留，使用 `/build --continue` 续接 |
 | 子 Agent 超时 | report status=error，让调度器决定下一步 |
 | 子 Agent 未生成文件 | report status=failed（非 error），进入修复循环 |
