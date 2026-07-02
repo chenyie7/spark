@@ -42,12 +42,14 @@ class PipelineEngine:
 
     # ── 公开 API ────────────────────────────────────────────────────
 
-    def start(self, requirement: str = "", target_dir: str = ".") -> PipelineState:
+    def start(self, requirement: str = "", base_path: str = ".",
+              project_name: str = "") -> PipelineState:
         """初始化流水线并持久化状态。
 
         Args:
             requirement: 用户需求描述。
-            target_dir: 模块根目录（相对于项目根）。
+            base_path: 项目存放位置（相对于项目根）。
+            project_name: 项目名称（必填）。
 
         Raises:
             RuntimeError: 如果已有流水线在运行中（状态文件存在且状态为
@@ -62,7 +64,8 @@ class PipelineEngine:
                     f"或调用 'next' 继续。"
                 )
         self.state = PipelineState(pipeline_name=self.config.name)
-        self.state.start(requirement=requirement, target_dir=target_dir)
+        self.state.start(requirement=requirement, base_path=base_path,
+                         project_name=project_name)
         self._save_state()
         return self.state
 
@@ -334,7 +337,9 @@ class PipelineEngine:
             "round": str(self.state.round),
             "max_retries": str(self.config.defaults.max_retries),
             "run_id": self.state.run_id,
-            "target_dir": self.state.target_dir,
+            "base_path": self.state.base_path,
+            "project_name": self.state.project_name,
+            "output_dir": self.state.output_dir,
         }
 
         try:
