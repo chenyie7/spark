@@ -19,19 +19,6 @@ from pipeline_engine.engine import PipelineEngine
 from pipeline_engine.models import NodeStatus
 
 
-def _generate_run_id(target_dir: str) -> str:
-    """生成运行 ID，格式: YYYYMMDDHHmmss[-target_dir]
-
-    target_dir 为 "." 时不加后缀，如 20260624153000。
-    target_dir 为 "admin-test" 时加后缀，如 20260624153000-admin-test。
-    """
-    from datetime import datetime, timezone
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    if target_dir and target_dir != ".":
-        return f"{timestamp}-{target_dir}"
-    return timestamp
-
-
 def cmd_start(args):
     """初始化流水线状态。"""
     pipeline_path = Path(args.pipeline)
@@ -45,7 +32,7 @@ def cmd_start(args):
 
     engine = PipelineEngine(config, state_path)
     try:
-        state = engine.start(args.requirement)
+        state = engine.start(requirement=args.requirement, target_dir=args.target_dir)
     except RuntimeError as e:
         # 流水线已在运行 → 返回当前状态信息
         existing = engine.status()
@@ -57,11 +44,7 @@ def cmd_start(args):
         }))
         sys.exit(0)
 
-    # 生成 run_id 并存入状态
-    run_id = _generate_run_id(args.target_dir)
-    state.run_id = run_id
-    state.target_dir = args.target_dir
-    engine._save_state()
+    run_id = state.run_id  # 由 PipelineState.start() 生成，不再覆盖
 
     # 同步更新 code-check-config.yaml，确保 reviewer 的扫描路径和输出目录正确
     import yaml as _yaml
