@@ -11,6 +11,18 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
+def _generate_run_id(target_dir: str = ".") -> str:
+    """生成 run_id，格式: YYYYMMDDHHmmss[-target_dir]
+
+    target_dir 为 "." 时不加后缀，如 "20260702120000"。
+    target_dir 为 "admin-test" 时加后缀，如 "20260702120000-admin-test"。
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    if target_dir and target_dir != ".":
+        return f"{timestamp}-{target_dir}"
+    return timestamp
+
+
 # ── 枚举 ────────────────────────────────────────────────────────────
 
 
@@ -302,12 +314,18 @@ class PipelineState:
         """更新 updated_at 时间戳。"""
         self.updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def start(self):
-        """将流水线标记为运行中，记录开始时间。"""
-        self.status = PipelineStatus.RUNNING
+    def start(self, requirement: str = "", target_dir: str = "."):
+        """将流水线标记为待命（PENDING），生成 run_id，记录开始时间。
+
+        不直接进入 RUNNING——由 next() 在首次派发节点时完成状态转移。
+        这样 Phase 1 可以先拿到 run_id 而不触发流水线执行。
+        """
+        self.requirement = requirement
+        self.target_dir = target_dir
+        self.status = PipelineStatus.PENDING
         self.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         if not self.run_id:
-            self.run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+            self.run_id = _generate_run_id(target_dir)
         self._touch()
 
     def complete(self):
