@@ -13,3 +13,7 @@ benchmarks/dumps/
 benchmarks/run-*
 pom.xml
 target/
+
+# pipeline runtime markers
+.pipeline-active
+review-output/.current-run
