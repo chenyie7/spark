@@ -325,12 +325,12 @@ class TestPipelineState:
         obj.start()
         d = obj.to_dict()
         assert d["pipeline_name"] == "test"
-        assert d["status"] == "running"
+        assert d["status"] == "pending"
 
-    def test_start_sets_running(self):
+    def test_start_sets_pending(self):
         obj = PipelineState(pipeline_name="test")
         obj.start()
-        assert obj.status == PipelineStatus.RUNNING
+        assert obj.status == PipelineStatus.PENDING
         assert obj.started_at != ""
 
     def test_complete(self):
@@ -431,27 +431,60 @@ class TestNextAction:
         assert len(d["nodes"]) == 2
 
 
-class TestPipelineStateTargetDir:
-    """PipelineState.target_dir 字段的测试。"""
+class TestPipelineStateOutputDir:
+    """PipelineState output_dir / base_path / project_name 字段的测试。"""
 
-    def test_target_dir_defaults_to_dot(self):
-        """新建 PipelineState 时 target_dir 默认值为 '.'"""
+    def test_output_dir_defaults_empty(self):
+        """新建 PipelineState 时 output_dir 默认值为空字符串"""
         from pipeline_engine.models import PipelineState
         state = PipelineState(pipeline_name="test")
-        assert state.target_dir == "."
+        assert state.output_dir == ""
+        assert state.base_path == "."
+        assert state.project_name == ""
 
-    def test_target_dir_roundtrip(self):
-        """from_dict / to_dict 往返保持 target_dir 不变"""
+    def test_start_computes_output_dir(self):
+        """start() 根据 base_path 和 project_name 计算 output_dir"""
         from pipeline_engine.models import PipelineState
-        state = PipelineState(pipeline_name="test", target_dir="admin-test")
-        data = state.to_dict()
-        assert data["target_dir"] == "admin-test"
-        restored = PipelineState.from_dict(data)
-        assert restored.target_dir == "admin-test"
+        state = PipelineState(pipeline_name="test")
+        state.start(requirement="test", base_path="workspace", project_name="order-service")
+        assert state.output_dir == "workspace/order-service/"
+        assert state.base_path == "workspace"
+        assert state.project_name == "order-service"
 
-    def test_target_dir_missing_defaults_to_dot(self):
-        """from_dict 缺少 target_dir 时回退为 '.'"""
+    def test_start_output_dir_trailing_slash_handled(self):
+        """start() 处理 base_path 末尾带斜杠的情况"""
+        from pipeline_engine.models import PipelineState
+        state = PipelineState(pipeline_name="test")
+        state.start(requirement="test", base_path="workspace/", project_name="order-service")
+        assert state.output_dir == "workspace/order-service/"
+
+    def test_start_no_project_name_falls_back_to_base_path(self):
+        """start() 无 project_name 时 output_dir 回退为 base_path"""
+        from pipeline_engine.models import PipelineState
+        state = PipelineState(pipeline_name="test")
+        state.start(requirement="test", base_path="workspace", project_name="")
+        assert state.output_dir == "workspace"
+
+    def test_output_dir_roundtrip(self):
+        """from_dict / to_dict 往返保持 output_dir 不变"""
+        from pipeline_engine.models import PipelineState
+        state = PipelineState(pipeline_name="test", base_path="modules",
+                              project_name="admin-test",
+                              output_dir="modules/admin-test/")
+        data = state.to_dict()
+        assert data["output_dir"] == "modules/admin-test/"
+        assert data["base_path"] == "modules"
+        assert data["project_name"] == "admin-test"
+        restored = PipelineState.from_dict(data)
+        assert restored.output_dir == "modules/admin-test/"
+        assert restored.base_path == "modules"
+        assert restored.project_name == "admin-test"
+
+    def test_from_dict_missing_fields_defaults(self):
+        """from_dict 缺少新字段时回退为默认值"""
         from pipeline_engine.models import PipelineState
         data = {"pipeline_name": "test"}
         state = PipelineState.from_dict(data)
-        assert state.target_dir == "."
+        assert state.base_path == "."
+        assert state.project_name == ""
+        assert state.output_dir == ""

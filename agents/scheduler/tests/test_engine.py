@@ -158,31 +158,25 @@ class TestPipelineEngineNext:
         assert "成功" not in action.message
 
 
-    def test_coder_prompt_contains_target_dir(self, sample_pipeline_path, state_path):
-        """coder prompt 中包含自定义 target_dir"""
+    def test_coder_prompt_contains_output_dir(self, sample_pipeline_path, state_path):
+        """coder prompt 中包含自定义 output_dir"""
         from pipeline_engine.config import load_pipeline
         from pipeline_engine.engine import PipelineEngine
         config = load_pipeline(sample_pipeline_path)
         engine = PipelineEngine(config, state_path)
-        engine.start("test")
-        engine._ensure_state()
-        engine.state.target_dir = "admin-test"
-        engine._save_state()
+        engine.start("test", base_path="workspace", project_name="admin-test")
         action = engine.next()
         assert action.nodes[0].node_id == "coder"
-        assert "admin-test/src/main/java" in action.nodes[0].prompt
+        assert "workspace/admin-test/src/main/java" in action.nodes[0].prompt
 
-    def test_reviewer_prompt_contains_target_dir(self, sample_pipeline_path, state_path):
-        """reviewer prompt 中包含自定义 target_dir"""
+    def test_reviewer_prompt_contains_output_dir(self, sample_pipeline_path, state_path):
+        """reviewer prompt 中包含自定义 output_dir"""
         from pipeline_engine.config import load_pipeline
         from pipeline_engine.engine import PipelineEngine
         from pipeline_engine.models import NodeStatus
         config = load_pipeline(sample_pipeline_path)
         engine = PipelineEngine(config, state_path)
-        engine.start("test")
-        engine._ensure_state()
-        engine.state.target_dir = "modules/user"
-        engine._save_state()
+        engine.start("test", base_path="modules", project_name="user")
         engine.next()  # coder
         engine.report("coder", NodeStatus.SUCCESS, "ok")
         action = engine.next()  # reviewer

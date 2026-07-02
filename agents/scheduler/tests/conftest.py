@@ -2,10 +2,10 @@ import json
 import pytest
 from pathlib import Path
 
-# 符合 {timestamp}-{target_dir} 格式的示例 run_id，供所有测试统一引用
+# 符合 {timestamp}-{project_name} 格式的示例 run_id，供所有测试统一引用
 SAMPLE_RUN_ID = "20260624103000-test"
-# target_dir="." 时的纯时间戳示例 run_id
-SAMPLE_RUN_ID_NO_TARGET = "20260624103000"
+# project_name="" 时的纯时间戳示例 run_id
+SAMPLE_RUN_ID_NO_PROJECT = "20260624103000"
 
 SAMPLE_PIPELINE_YAML = """
 name: test-pipeline
@@ -24,12 +24,12 @@ nodes:
     description: "Generate code"
     prompt_template: |
       Generate code for: {requirement}
-      Output: {target_dir}/src/main/java
+      Output: {output_dir}src/main/java
       {review_context}
     inputs:
       requirement: "${user_input}"
     outputs:
-      target_dir: "{target_dir}/src/main/java"
+      target_dir: "{output_dir}src/main/java"
     timeout: 900s
 
   - id: reviewer
@@ -37,7 +37,7 @@ nodes:
     agent: reviewer
     description: "Review code"
     prompt_template: |
-      Review code at {target_dir}/src/main/java.
+      Review code at {output_dir}src/main/java.
       Output directory: review-output/{run_id}/
       Return REVIEW_PASSED, REVIEW_FAILED, or REVIEW_ERROR.
     inputs:
@@ -111,15 +111,15 @@ def sample_pipeline_dict() -> dict:
             {
                 "id": "coder", "type": "agent", "agent": "coder",
                 "description": "Generate code",
-                "prompt_template": "Generate: {requirement} to {target_dir}/src/main/java",
+                "prompt_template": "Generate: {requirement} to {output_dir}src/main/java",
                 "inputs": {"requirement": "${user_input}"},
-                "outputs": {"target_dir": "{target_dir}/src/main/java"},
+                "outputs": {"target_dir": "{output_dir}src/main/java"},
                 "timeout": "900s"
             },
             {
                 "id": "reviewer", "type": "agent", "agent": "reviewer",
                 "description": "Review code",
-                "prompt_template": "Review {target_dir}/src/main/java. Output: review-output/{run_id}/",
+                "prompt_template": "Review {output_dir}src/main/java. Output: review-output/{run_id}/",
                 "inputs": {"coder_output": "${coder.outputs.target_dir}"},
                 "outputs": {"final_report": "review-output/{run_id}/final-review-report.md"},
                 "timeout": "600s"
