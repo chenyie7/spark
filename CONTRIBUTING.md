@@ -25,7 +25,7 @@ agents/
 ├── scheduler/      # 流水线调度引擎（Python）
 └── pm/             # 需求沟通 Agent
 
-benchmarks/hooks/   # 基准测试采集与合成脚本
+benchmarks/         # 基准测试系统（Python 包 + Hook + 配置）
 docs/               # 项目文档
 ```
 
@@ -55,7 +55,7 @@ docs/               # 项目文档
 - **改进报告模板**：优化 Markdown 报告的可读性和信息密度
 - **增强调度引擎**：支持更复杂的 DAG 流转逻辑
 - **增加测试覆盖**：补充边界场景的测试用例
-- **完善基准测试**：扩展 `benchmarks/hooks/schema.py` 和 `compare.py` 的分析维度
+- **完善基准测试**：扩展 `benchmarks/benchmark_lib/` 的分析维度，优化 `spark:benchmarks` Skill
 
 ## 规范文件编写指南
 
