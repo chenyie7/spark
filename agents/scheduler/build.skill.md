@@ -150,8 +150,8 @@ python3 -m pipeline_engine.cli next \
 
 **第 2 步：根据返回 JSON 的 `action` 字段分流**
 
-- `action == "done"` → **清理标记文件：** `rm -f .pipeline-active && rm -f review-output/.current-run`。然后读取 `review-output/{run_id}/final-review-report.md` 展示结果。流水线完成。
-- `action == "error"` → **清理标记文件：** `rm -f .pipeline-active && rm -f review-output/.current-run`。展示 `message` 内容，提示用户介入。
+- `action == "done"` → 读取 `review-output/{run_id}/final-review-report.md` 展示结果。流水线完成。
+- `action == "error"` → 展示 `message` 内容，提示用户介入。
 - `action == "execute"` → **继续执行第 3 步。**
 
 **第 3 步：启动子 Agent（对 `nodes` 数组中的每个节点）**

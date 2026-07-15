@@ -79,6 +79,11 @@ def cmd_synthesize(args):
     if cleaned > 0:
         print(f"Cleaned {cleaned} expired benchmark(s).", file=sys.stderr)
 
+    # 清理流水线标记（阻止后续 Stop hook 重复合成）
+    pipeline_marker = Path(project_dir, ".pipeline-active")
+    if pipeline_marker.exists():
+        pipeline_marker.unlink()
+
 
 def cmd_cleanup(args):
     """清理过期数据。"""
