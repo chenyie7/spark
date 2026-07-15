@@ -16,5 +16,6 @@ target/
 
 # pipeline runtime markers
 .pipeline-active
-review-output/.current-runhello-test/
+review-output/.current-run
+hello-test/
 benchmark-test/
