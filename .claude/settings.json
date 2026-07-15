@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PROJECT_DIR}/benchmarks/hooks/synthesize-benchmark.sh"
+            "command": "PYTHONPATH=${CLAUDE_PROJECT_DIR:-.}/benchmarks:${CLAUDE_PROJECT_DIR:-.}/agents/scheduler:${CLAUDE_PROJECT_DIR:-.}/agents/reviewer/check_system python3 -m benchmark_lib.cli synthesize --project-dir ${CLAUDE_PROJECT_DIR:-.}"
           }
         ]
       }
@@ -36,7 +36,8 @@
   "permissions": {
     "allow": [
       "Bash(python3 -m pipeline_engine.cli *)",
-      "Bash(python3 -m code_check.cli *)"
+      "Bash(python3 -m code_check.cli *)",
+      "Bash(python3 -m benchmark_lib.cli *)"
     ]
   }
 }
