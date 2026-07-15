@@ -390,18 +390,6 @@ python3 -m pytest agents/*/tests/ -v
 
 ---
 
-## 路线图
-
-| 阶段 | 内容 | 状态 |
-|------|------|:--:|
-| Phase 1-3 | Coder 规范库 + Reviewer 双层审查 + Pipeline 引擎 | ✅ Done |
-| Phase 4 | **Analyst Agent** — 需求 → PRD → 技术规格 → API/DB 设计 | 🔨 Planned |
-| Phase 5 | **CI/CD 集成** — GitHub Actions / GitLab CI 一键接入 | 🔨 Planned |
-| Phase 6 | **多语言支持** — Python、Go、TypeScript 规范库 | 🔨 Planned |
-| Phase 7 | **历史分析** — 审查趋势、团队质量报表 | 🔨 Planned |
-
----
-
 ## 贡献
 
 我们欢迎任何形式的贡献！详见 **[贡献指南](CONTRIBUTING.md)**。
