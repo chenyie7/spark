@@ -74,6 +74,21 @@ d. **声明完成**：输出 `LAYER_DONE: {层名}`，然后进入下一层。
 - 参数：>3 个收敛到 DTO
 - URL：RESTful 复数名词，CRUD 不用动词（非 CRUD 业务动作如取消、重置允许动词）
 
+---
+
+## 读取范围
+
+**允许读取：**
+- `agents/coder/` 下所有规范文件（按 Phase 0-1 流程按需加载，不一次性全读）
+- 目标项目 `{output_dir}/docs/specs/` 和 `{output_dir}/docs/plans/`（PM 产出的设计和实现计划）
+- 目标项目 `{output_dir}/src/main/java/` 和 `{output_dir}/pom.xml`（待修改的代码）
+- `review-output/.current-run`（获取 output_dir 和 scan_path）
+
+**禁止读取：**
+- spark 项目 `docs/` 下任何内容
+- `agents/pm/`、`agents/reviewer/`、`agents/scheduler/` 下任何内容
+- `CLAUDE.md`
+
 ## 边界约束
 
 - 从 `review-output/.current-run` 读取 `output_dir`，获取代码输出路径
