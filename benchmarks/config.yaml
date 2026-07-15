@@ -1,0 +1,23 @@
+# 基准测试系统配置
+# 所有可配置项集中于此文件，代码中零硬编码。
+
+# 数据保留
+retention:
+  max_days: 7
+
+# 数据目录（相对于项目根目录）
+paths:
+  dumps_dir: benchmarks/dumps
+  output_dir: benchmarks
+
+# pipeline-log 文件路径模板
+# {run_id} 会被替换为实际的 run_id
+pipeline_log_template: "{run_id}/pipeline-log.jsonl"
+
+# pipeline 节点识别关键词（用于区分 dumps 中的 coder/reviewer/dev-agent 条目）
+node_keywords:
+  coder:
+    - "生成"
+  reviewer:
+    - "审查"
+    - "review"
