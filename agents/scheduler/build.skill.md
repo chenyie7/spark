@@ -75,18 +75,18 @@ PM 阶段（需求对话）在主线运行，用户交互完成后自动衔接 p
    - 逐轮澄清需求（一次只问一个问题、优先多选、YAGNI）
    - 提出 2-3 种方案对比
    - 逐节确认设计（架构 → 数据模型 → API → 数据流 → 错误处理 → 测试）
-   - 输出 spec: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+   - 输出 spec: `{output_dir}/docs/specs/YYYY-MM-DD-<topic>-design.md`
    - spec 自检（placeholder、矛盾、歧义、范围）
    - 用户 review spec → 修改或确认
-   - 输出 plan: `docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`
+   - 输出 plan: `{output_dir}/docs/plans/YYYY-MM-DD-<topic>-plan.md`
    - plan 自检（spec 覆盖、placeholder、类型一致性）
 5. 更新 `pm-context.json`：status → "done"，记录 spec_file 和 plan_file 绝对路径
 6. **简明提示当前阶段完成，下一阶段需要的命令：**
 
    ```
    需求梳理完毕。
-   spec: docs/superpowers/specs/<文件名>.md
-   plan: docs/superpowers/plans/<文件名>.md
+   spec: {output_dir}/docs/specs/<文件名>.md
+   plan: {output_dir}/docs/plans/<文件名>.md
    
    运行 /build --resume {run_id} 开始开发
    ```
