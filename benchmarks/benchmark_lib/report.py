@@ -63,8 +63,9 @@ def render_report(data: dict) -> str:
             cache_hit = ""
             inp = usage.get("input_tokens", 0)
             cr = usage.get("cache_read_input_tokens", 0)
-            if inp > 0:
-                cache_hit = f"{round(cr / inp * 100, 0)}%"
+            total = cr + inp
+            if total > 0:
+                cache_hit = f"{round(cr / total * 100, 0)}%"
             result = entry.get("result", "-") if role_key == "reviewer" else "-"
             lines.append(
                 f"| {rn} | {role_key} | {entry['phase']} | {dur_s} | {tok} | {tools} | {cache_hit} | {result} |"

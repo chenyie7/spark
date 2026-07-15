@@ -140,7 +140,7 @@ def _build_rounds(
         if node == "coder":
             dump = coder_dumps[c_idx] if c_idx < len(coder_dumps) else {}
             c_idx += 1
-            phase = "generate" if round_num == 1 else "fix"
+            phase = "generate" if round_num == 0 else "fix"
 
             # 检查是否已有该 round 的条目（reviewer 可能先被处理）
             existing = None

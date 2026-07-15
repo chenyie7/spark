@@ -33,13 +33,13 @@ def cmd_synthesize(args):
     """合成 benchmark.json 和 report.md。"""
     project_dir = args.project_dir
 
-    # 开关：非流水线场景静默退出（Stop hook 每次响应都触发）
-    if not Path(project_dir, ".pipeline-active").exists():
-        return
-
-    # 自动检测 run_id
+    # 自动检测 run_id（显式传入时跳过检测和守卫）
     run_id = args.run_id
+
+    # 自动检测模式：用于 Stop hook。非流水线场景静默退出。
     if not run_id:
+        if not Path(project_dir, ".pipeline-active").exists():
+            return
         run_id = _detect_run_id(project_dir)
         if not run_id:
             return  # .current-run 不存在，静默退出
