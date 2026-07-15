@@ -130,6 +130,25 @@ def cmd_report(args):
         print(json.dumps({"accepted": False, "error": str(e)}))
         sys.exit(0)
 
+    # ── 写入 pipeline-log.jsonl（基准测试数据采集）─────────────
+    import time as _time
+
+    run_id = state_path.parent.name
+    log_dir = Path("benchmarks") / run_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "pipeline-log.jsonl"
+
+    log_entry = {
+        "ts": int(_time.time()),
+        "round": state.round,
+        "node": args.node,
+        "status": args.status,
+        "verdict": args.verdict or "",
+    }
+    with open(log_path, "a") as f:
+        f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    # ── pipeline-log 写入完毕 ─────────────────────────────
+
     print(json.dumps({
         "accepted": True,
         "state": state.status.value,
