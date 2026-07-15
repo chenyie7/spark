@@ -16,12 +16,14 @@ defaults:
   timeout: 600s
   max_retries: 3
   block_on: [P0]
+  mode: acceptEdits
 
 nodes:
   - id: coder
     type: agent
     agent: coder
     description: "Generate code"
+    mode: acceptEdits
     prompt_template: |
       Generate code for: {requirement}
       Output: {output_dir}src/main/java
@@ -36,6 +38,7 @@ nodes:
     type: agent
     agent: reviewer
     description: "Review code"
+    mode: acceptEdits
     prompt_template: |
       Review code at {output_dir}src/main/java.
       Output directory: review-output/{run_id}/
@@ -106,7 +109,7 @@ def sample_pipeline_dict() -> dict:
         "name": "test-pipeline",
         "version": "1.0",
         "description": "Test pipeline",
-        "defaults": {"timeout": "600s", "max_retries": 3, "block_on": ["P0"]},
+        "defaults": {"timeout": "600s", "max_retries": 3, "block_on": ["P0"], "mode": "acceptEdits"},
         "nodes": [
             {
                 "id": "coder", "type": "agent", "agent": "coder",
@@ -114,7 +117,8 @@ def sample_pipeline_dict() -> dict:
                 "prompt_template": "Generate: {requirement} to {output_dir}src/main/java",
                 "inputs": {"requirement": "${user_input}"},
                 "outputs": {"target_dir": "{output_dir}src/main/java"},
-                "timeout": "900s"
+                "timeout": "900s",
+                "mode": "acceptEdits"
             },
             {
                 "id": "reviewer", "type": "agent", "agent": "reviewer",
@@ -122,7 +126,8 @@ def sample_pipeline_dict() -> dict:
                 "prompt_template": "Review {output_dir}src/main/java. Output: review-output/{run_id}/",
                 "inputs": {"coder_output": "${coder.outputs.target_dir}"},
                 "outputs": {"final_report": "review-output/{run_id}/final-review-report.md"},
-                "timeout": "600s"
+                "timeout": "600s",
+                "mode": "acceptEdits"
             }
         ],
         "edges": [

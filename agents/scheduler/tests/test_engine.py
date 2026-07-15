@@ -39,6 +39,7 @@ class TestPipelineEngineNext:
         assert "build something" in action.nodes[0].prompt
         assert action.nodes[0].phase == "code_generation"
         assert action.nodes[0].round == 0
+        assert action.nodes[0].mode == "acceptEdits"
 
     def test_next_when_nodes_in_progress_returns_error(self, sample_pipeline_path: Path, state_path: Path):
         config = load_pipeline(sample_pipeline_path)
@@ -197,6 +198,139 @@ class TestPipelineEngineNext:
         action = engine.next()  # reviewer
         assert action.nodes[0].node_id == "reviewer"
         assert SAMPLE_RUN_ID in action.nodes[0].prompt
+
+
+    def test_node_mode_overrides_defaults(self, tmp_path: Path, state_path: Path):
+        """节点级别的 mode 覆盖 defaults.mode"""
+        import yaml
+        from pipeline_engine.config import load_pipeline
+        from pipeline_engine.engine import PipelineEngine
+        from pipeline_engine.models import NodeStatus
+
+        yaml_content = """
+name: test-override
+version: "1.0"
+description: "Test mode override"
+defaults:
+  timeout: 600s
+  max_retries: 3
+  mode: default
+nodes:
+  - id: coder
+    type: agent
+    agent: coder
+    description: "Generate"
+    prompt_template: "Generate {requirement}"
+    mode: bypassPermissions
+    timeout: 900s
+  - id: reviewer
+    type: agent
+    agent: reviewer
+    description: "Review"
+    prompt_template: "Review. Return REVIEW_PASSED or REVIEW_FAILED."
+    mode: acceptEdits
+    timeout: 600s
+edges:
+  - from: coder
+    to: reviewer
+    trigger: on_success
+    description: ""
+  - from: reviewer
+    to: DONE
+    trigger: on_condition
+    condition:
+      status: REVIEW_PASSED
+    description: ""
+  - from: reviewer
+    to: DONE
+    trigger: on_condition
+    condition:
+      status: REVIEW_FAILED
+    description: ""
+  - from: reviewer
+    to: DONE
+    trigger: on_condition
+    condition:
+      status: REVIEW_ERROR
+    description: ""
+"""
+        p = tmp_path / "override-mode.yaml"
+        p.write_text(yaml_content)
+
+        config = load_pipeline(p)
+        engine = PipelineEngine(config, state_path)
+        engine.start("test")
+
+        action = engine.next()
+        assert action.nodes[0].node_id == "coder"
+        assert action.nodes[0].mode == "bypassPermissions"
+
+        engine.report("coder", NodeStatus.SUCCESS, "ok")
+        action = engine.next()
+        assert action.nodes[0].node_id == "reviewer"
+        assert action.nodes[0].mode == "acceptEdits"
+
+    def test_mode_falls_back_to_defaults(self, tmp_path: Path, state_path: Path):
+        """节点未指定 mode 时回退到 defaults.mode"""
+        import yaml
+        from pipeline_engine.config import load_pipeline
+        from pipeline_engine.engine import PipelineEngine
+
+        yaml_content = """
+name: test-fallback
+version: "1.0"
+description: "Test mode fallback"
+defaults:
+  timeout: 600s
+  max_retries: 3
+  mode: plan
+nodes:
+  - id: coder
+    type: agent
+    agent: coder
+    description: "Generate"
+    prompt_template: "Generate {requirement}"
+    timeout: 900s
+  - id: reviewer
+    type: agent
+    agent: reviewer
+    description: "Review"
+    prompt_template: "Review. Return REVIEW_PASSED or REVIEW_FAILED."
+    timeout: 600s
+edges:
+  - from: coder
+    to: reviewer
+    trigger: on_success
+    description: ""
+  - from: reviewer
+    to: DONE
+    trigger: on_condition
+    condition:
+      status: REVIEW_PASSED
+    description: ""
+  - from: reviewer
+    to: DONE
+    trigger: on_condition
+    condition:
+      status: REVIEW_FAILED
+    description: ""
+  - from: reviewer
+    to: DONE
+    trigger: on_condition
+    condition:
+      status: REVIEW_ERROR
+    description: ""
+"""
+        p = tmp_path / "fallback-mode.yaml"
+        p.write_text(yaml_content)
+
+        config = load_pipeline(p)
+        engine = PipelineEngine(config, state_path)
+        engine.start("test")
+
+        action = engine.next()
+        assert action.nodes[0].node_id == "coder"
+        assert action.nodes[0].mode == "plan"
 
 
 class TestPipelineEngineReport:

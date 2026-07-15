@@ -91,17 +91,19 @@ class TestActionType:
 
 class TestPipelineDefaults:
     def test_from_dict_full(self):
-        d = {"timeout": "300s", "max_retries": 5, "block_on": ["P0", "P1"]}
+        d = {"timeout": "300s", "max_retries": 5, "block_on": ["P0", "P1"], "mode": "bypassPermissions"}
         obj = PipelineDefaults.from_dict(d)
         assert obj.timeout == "300s"
         assert obj.max_retries == 5
         assert obj.block_on == ["P0", "P1"]
+        assert obj.mode == "bypassPermissions"
 
     def test_from_dict_defaults(self):
         obj = PipelineDefaults.from_dict({})
         assert obj.timeout == "600s"
         assert obj.max_retries == 3
         assert obj.block_on == ["P0"]
+        assert obj.mode == "default"
 
     def test_from_dict_invalid_type(self):
         with pytest.raises(ValueError, match="必须是 dict"):
@@ -170,17 +172,19 @@ class TestNodeConfig:
         assert obj.outputs == {}
         assert obj.timeout is None
         assert obj.depends_on == []
+        assert obj.mode is None
 
     def test_from_dict_full(self):
         d = {"id": "reviewer", "type": "agent", "agent": "reviewer",
              "description": "Review", "prompt_template": "Review.",
              "inputs": {"src": "path"}, "outputs": {"report": "path"},
-             "timeout": "600s", "depends_on": ["coder"]}
+             "timeout": "600s", "depends_on": ["coder"], "mode": "acceptEdits"}
         obj = NodeConfig.from_dict(d)
         assert obj.inputs == {"src": "path"}
         assert obj.outputs == {"report": "path"}
         assert obj.timeout == "600s"
         assert obj.depends_on == ["coder"]
+        assert obj.mode == "acceptEdits"
 
     def test_from_dict_missing_id(self):
         d = {"type": "agent", "agent": "checker", "description": "x",
@@ -381,13 +385,14 @@ class TestNodeToExecute:
     def test_to_dict(self):
         obj = NodeToExecute(node_id="coder", agent_type="coder",
                             prompt="Generate code", timeout="900s",
-                            round=1, phase="fix")
+                            round=1, phase="fix", mode="acceptEdits")
         d = obj.to_dict()
         assert d["node_id"] == "coder"
         assert d["prompt"] == "Generate code"
         assert d["phase"] == "fix"
         assert d["round"] == 1
         assert d["timeout"] == "900s"
+        assert d["mode"] == "acceptEdits"
 
 
 class TestNextAction:
