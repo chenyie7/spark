@@ -22,17 +22,10 @@ class PathsConfig:
 
 
 @dataclass
-class NodeKeywordsConfig:
-    coder: list[str] = field(default_factory=lambda: ["生成"])
-    reviewer: list[str] = field(default_factory=lambda: ["审查", "review"])
-
-
-@dataclass
 class BenchmarkConfig:
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
     pipeline_log_template: str = "{run_id}/pipeline-log.jsonl"
-    node_keywords: NodeKeywordsConfig = field(default_factory=NodeKeywordsConfig)
 
 
 def load_config(project_dir: str = ".") -> BenchmarkConfig:
@@ -62,10 +55,6 @@ def load_config(project_dir: str = ".") -> BenchmarkConfig:
         ),
         pipeline_log_template=raw.get(
             "pipeline_log_template", "{run_id}/pipeline-log.jsonl"
-        ),
-        node_keywords=NodeKeywordsConfig(
-            coder=raw.get("node_keywords", {}).get("coder", ["生成"]),
-            reviewer=raw.get("node_keywords", {}).get("reviewer", ["审查", "review"]),
         ),
     )
 

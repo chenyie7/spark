@@ -44,12 +44,8 @@ def synthesize(run_id: str, project_dir: str = ".") -> dict:
     log_path = output_dir / config.pipeline_log_template.format(run_id=run_id)
     log_records = _read_jsonl(log_path) if log_path.is_file() else []
 
-    # 3. 按 node 关键词分类 dump 条目，按时序匹配
-    coder_dumps = _filter_dumps(dump_records, config.node_keywords.coder)
-    reviewer_dumps = _filter_dumps(dump_records, config.node_keywords.reviewer)
-
-    # 4. 按 pipeline-log 分组构建 rounds
-    rounds = _build_rounds(log_records, coder_dumps, reviewer_dumps)
+    # 3. 按时序匹配 pipeline-log 和 dump 数据
+    rounds = _build_rounds(log_records, dump_records)
 
     # 5. 提取 issues
     _attach_issues(rounds, run_id, project_dir)
@@ -106,107 +102,67 @@ def _read_jsonl(path: Path) -> list[dict]:
     return records
 
 
-def _filter_dumps(dump_records: list[dict], keywords: list[str]) -> list[dict]:
-    """筛选包含指定关键词的 dump 条目，按 ts 排序。"""
-    result = []
-    for rec in dump_records:
-        desc = rec.get("description", "")
-        if any(kw in desc for kw in keywords):
-            result.append(rec)
-    result.sort(key=lambda r: r.get("ts", 0))
-    return result
-
-
 def _build_rounds(
     log_records: list[dict],
-    coder_dumps: list[dict],
-    reviewer_dumps: list[dict],
+    dump_records: list[dict],
 ) -> list[dict]:
-    """合并 pipeline-log 和 dump 数据，构建 rounds 列表。
+    """按时序合并 pipeline-log 和 dump 数据，构建 rounds 列表。
 
-    pipeline-log 条目按时序提供轮次结构和 verdict。
-    dump 条目按时序提供性能数据（duration、tokens、usage）。
-    两者按时序 zip 合并。
+    pipeline-log 和 dump 都是按执行顺序追加的。
+    第 N 条 pipeline-log 条目匹配第 N 条 dump 条目。
     """
+    sorted_dumps = sorted(dump_records, key=lambda r: r.get("ts", 0))
     rounds = []
-    c_idx = 0
-    r_idx = 0
+    dump_idx = 0
 
     for log in log_records:
         node = log.get("node", "")
         round_num = log.get("round", 1)
         verdict = log.get("verdict", "")
 
+        dump = sorted_dumps[dump_idx] if dump_idx < len(sorted_dumps) else {}
+        dump_idx += 1
+
         if node == "coder":
-            dump = coder_dumps[c_idx] if c_idx < len(coder_dumps) else {}
-            c_idx += 1
             phase = "generate" if round_num == 0 else "fix"
-
-            # 检查是否已有该 round 的条目（reviewer 可能先被处理）
-            existing = None
-            for rnd in rounds:
-                if rnd["round"] == round_num:
-                    existing = rnd
-                    break
-
+            existing = _find_or_none(rounds, round_num)
+            coder_data = {
+                "phase": phase,
+                "duration_ms": dump.get("duration_ms", 0),
+                "total_tokens": dump.get("total_tokens", 0),
+                "total_tool_uses": dump.get("total_tool_uses", 0),
+                "usage": dump.get("usage", {}),
+            }
             if existing is not None:
-                existing["coder"] = {
-                    "phase": phase,
-                    "duration_ms": dump.get("duration_ms", 0),
-                    "total_tokens": dump.get("total_tokens", 0),
-                    "total_tool_uses": dump.get("total_tool_uses", 0),
-                    "usage": dump.get("usage", {}),
-                }
+                existing["coder"] = coder_data
             else:
-                rounds.append({
-                    "round": round_num,
-                    "coder": {
-                        "phase": phase,
-                        "duration_ms": dump.get("duration_ms", 0),
-                        "total_tokens": dump.get("total_tokens", 0),
-                        "total_tool_uses": dump.get("total_tool_uses", 0),
-                        "usage": dump.get("usage", {}),
-                    },
-                    "reviewer": None,
-                })
+                rounds.append({"round": round_num, "coder": coder_data, "reviewer": None})
 
         elif node == "reviewer":
-            dump = reviewer_dumps[r_idx] if r_idx < len(reviewer_dumps) else {}
-            r_idx += 1
-
-            # 找到当前 round 的条目并附加 reviewer
-            existing = None
-            for rnd in rounds:
-                if rnd["round"] == round_num:
-                    existing = rnd
-                    break
-
+            existing = _find_or_none(rounds, round_num)
+            reviewer_data = {
+                "phase": "review",
+                "duration_ms": dump.get("duration_ms", 0),
+                "total_tokens": dump.get("total_tokens", 0),
+                "total_tool_uses": dump.get("total_tool_uses", 0),
+                "usage": dump.get("usage", {}),
+                "result": verdict,
+                "issues": {"P0": 0, "P1": 0, "P2": 0, "AI_FAIL": -1},
+            }
             if existing is not None:
-                existing["reviewer"] = {
-                    "phase": "review",
-                    "duration_ms": dump.get("duration_ms", 0),
-                    "total_tokens": dump.get("total_tokens", 0),
-                    "total_tool_uses": dump.get("total_tool_uses", 0),
-                    "usage": dump.get("usage", {}),
-                    "result": verdict,
-                    "issues": {"P0": 0, "P1": 0, "P2": 0, "AI_FAIL": -1},
-                }
+                existing["reviewer"] = reviewer_data
             else:
-                rounds.append({
-                    "round": round_num,
-                    "coder": None,
-                    "reviewer": {
-                        "phase": "review",
-                        "duration_ms": dump.get("duration_ms", 0),
-                        "total_tokens": dump.get("total_tokens", 0),
-                        "total_tool_uses": dump.get("total_tool_uses", 0),
-                        "usage": dump.get("usage", {}),
-                        "result": verdict,
-                        "issues": {"P0": 0, "P1": 0, "P2": 0, "AI_FAIL": -1},
-                    },
-                })
+                rounds.append({"round": round_num, "coder": None, "reviewer": reviewer_data})
 
     return rounds
+
+
+def _find_or_none(rounds: list[dict], round_num: int) -> dict | None:
+    """在 rounds 列表中查找指定轮次的条目。"""
+    for r in rounds:
+        if r["round"] == round_num:
+            return r
+    return None
 
 
 def _attach_issues(rounds: list[dict], run_id: str, project_dir: str) -> None:

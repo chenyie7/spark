@@ -13,11 +13,3 @@ paths:
 # pipeline-log 文件路径模板
 # {run_id} 会被替换为实际的 run_id
 pipeline_log_template: "{run_id}/pipeline-log.jsonl"
-
-# pipeline 节点识别关键词（用于区分 dumps 中的 coder/reviewer/dev-agent 条目）
-node_keywords:
-  coder:
-    - "生成"
-  reviewer:
-    - "审查"
-    - "review"
