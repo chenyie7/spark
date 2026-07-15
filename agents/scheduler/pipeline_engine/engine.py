@@ -302,6 +302,7 @@ class PipelineEngine:
             prompt = self._render_prompt(node)
             phase = self._determine_phase(node)
             timeout = node.timeout or self.config.defaults.timeout
+            mode = node.mode or self.config.defaults.mode
             rendered.append(NodeToExecute(
                 node_id=node.id,
                 agent_type=node.agent,
@@ -309,6 +310,7 @@ class PipelineEngine:
                 timeout=timeout,
                 round=self.state.round,
                 phase=phase,
+                mode=mode,
             ))
         return rendered
 

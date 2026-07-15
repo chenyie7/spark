@@ -161,6 +161,7 @@ python3 -m pipeline_engine.cli next \
 a. 使用 Agent 工具启动子 Agent：
    - `subagent_type` 使用节点返回的 `agent_type`
    - `prompt` 使用节点返回的已渲染 `prompt`
+   - `mode` 使用节点返回的 `mode` 值
    - 超时参考节点返回的 `timeout`
 
 b. 等待子 Agent 完成，提取最终回复

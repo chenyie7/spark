@@ -14,6 +14,7 @@ defaults:
   block_on: [P0]         # 触发回退的严重级别列表
   base_path: "."         # 项目存放位置，默认当前目录
   project_name: ""       # 项目名称，空则需要交互输入
+  mode: acceptEdits
 
 # ── DAG 节点 ──
 # 每个节点对应一个 Agent。调度 Agent 按 edges 定义的顺序逐个执行。
@@ -22,6 +23,7 @@ nodes:
     type: agent
     agent: coder
     description: "根据需求生成 Spring Boot 3 Java 代码，遵守 agents/coder/ 下的所有规范"
+    mode: acceptEdits
     prompt_template: |
       开始工作前，先读取 review-output/.current-run 获取 output_dir 和 scan_path。
 
@@ -54,6 +56,7 @@ nodes:
     type: agent
     agent: reviewer
     description: "对 coder 产出的代码执行双层审查：Layer 1 Python CLI 预检 + Layer 2 AI 语义检查"
+    mode: acceptEdits
     prompt_template: |
       开始工作前，先读取 review-output/.current-run 获取 output_dir 和 scan_path。
       严格遵守 `agents/reviewer/review.skill.md` 中「读取范围」定义的允许和禁止读取列表。

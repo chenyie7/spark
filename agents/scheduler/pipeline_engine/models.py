@@ -64,6 +64,7 @@ class PipelineDefaults:
     timeout: str = "600s"
     max_retries: int = 3
     block_on: list[str] = field(default_factory=lambda: ["P0"])
+    mode: str = "default"
 
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineDefaults":
@@ -73,6 +74,7 @@ class PipelineDefaults:
             timeout=d.get("timeout", "600s"),
             max_retries=d.get("max_retries", 3),
             block_on=d.get("block_on", ["P0"]),
+            mode=d.get("mode", "default"),
         )
 
     def to_dict(self) -> dict:
@@ -80,6 +82,7 @@ class PipelineDefaults:
             "timeout": self.timeout,
             "max_retries": self.max_retries,
             "block_on": self.block_on,
+            "mode": self.mode,
         }
 
 
@@ -151,6 +154,7 @@ class NodeConfig:
     inputs: dict[str, str] = field(default_factory=dict)
     outputs: dict[str, str] = field(default_factory=dict)
     timeout: Optional[str] = None
+    mode: Optional[str] = None
     depends_on: list[str] = field(default_factory=list)
 
     @classmethod
@@ -169,6 +173,7 @@ class NodeConfig:
             inputs=d.get("inputs", {}),
             outputs=d.get("outputs", {}),
             timeout=d.get("timeout"),
+            mode=d.get("mode"),
             depends_on=d.get("depends_on", []),
         )
 
@@ -186,6 +191,8 @@ class NodeConfig:
             d["outputs"] = self.outputs
         if self.timeout is not None:
             d["timeout"] = self.timeout
+        if self.mode is not None:
+            d["mode"] = self.mode
         if self.depends_on:
             d["depends_on"] = self.depends_on
         return d
@@ -429,6 +436,7 @@ class NodeToExecute:
     timeout: str
     round: int
     phase: str           # "code_generation" | "review" | "fix"
+    mode: str = "default"
 
     def to_dict(self) -> dict:
         return {
@@ -436,6 +444,7 @@ class NodeToExecute:
             "agent_type": self.agent_type,
             "prompt": self.prompt,
             "timeout": self.timeout,
+            "mode": self.mode,
             "round": self.round,
             "phase": self.phase,
         }
