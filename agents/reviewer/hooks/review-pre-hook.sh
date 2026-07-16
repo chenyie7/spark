@@ -14,54 +14,40 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CHECK_SYSTEM_DIR="$PROJECT_DIR/agents/reviewer/check_system"
-CONFIG_FILE="$CHECK_SYSTEM_DIR/code-check-config.yaml"
 
 # ─────────────────────────────────────────────────────────────
-# 从 YAML 配置读取默认扫描路径；命令行参数优先
-CONFIG_PATH=$(python3 -c "
-import yaml, sys
-try:
-    with open(sys.argv[1]) as f:
-        c = yaml.safe_load(f)
-    print(c.get('default_scan_path', 'src/main/java'))
-except Exception:
-    print('src/main/java')
-" "$CONFIG_FILE" 2>/dev/null)
-
-TARGET_PATH="${1:-${REVIEW_TARGET_PATH:-$CONFIG_PATH}}"
+TARGET_PATH="${1:-${REVIEW_TARGET_PATH:-src/main/java}}"
 
 echo "============================================"
 echo " Pre-hook: 程序预检"
 echo " Target: $TARGET_PATH"
 echo "============================================"
 
-cd "$CHECK_SYSTEM_DIR"
-
-# Resolve target path relative to PROJECT_DIR (the script changes to CHECK_SYSTEM_DIR,
-# but TARGET_PATH is relative to the project root)
 TARGET_ABS="$PROJECT_DIR/$TARGET_PATH"
-python3 -m code_check.cli scan "$TARGET_ABS"
-EXIT_CODE=$?
 
-if [ $EXIT_CODE -ne 0 ]; then
+if [ ! -d "$TARGET_ABS" ]; then
     echo ""
     echo "============================================"
     echo " Pre-hook: 阻断"
-    echo " 程序预检未通过，请修复后再继续。"
-    OUTPUT_DIR_REL=$(python3 -c "
-import yaml, sys
-try:
-    with open(sys.argv[1]) as f:
-        c = yaml.safe_load(f)
-    print(c.get('output_dir', '../../../review-output'))
-except Exception:
-    print('../../../review-output')
-" "$CHECK_SYSTEM_DIR/code-check-config.yaml" 2>/dev/null || echo "../../../review-output")
-    echo " 详细报告: $CHECK_SYSTEM_DIR/$OUTPUT_DIR_REL/pre-check-report.md"
+    echo " 目标路径不存在: $TARGET_ABS"
     echo "============================================"
     exit 1
 fi
 
+JAVA_COUNT=$(find "$TARGET_ABS" -name "*.java" -type f 2>/dev/null | wc -l | tr -d ' ')
+if [ "$JAVA_COUNT" -eq 0 ]; then
+    echo ""
+    echo "============================================"
+    echo " Pre-hook: 阻断"
+    echo " 未找到 Java 文件: $TARGET_ABS"
+    echo "============================================"
+    exit 1
+fi
+
+echo "Java 文件数: $JAVA_COUNT"
+echo ""
+echo "静态代码扫描已由 reviewer Agent 中的 fuck-u-code MCP 工具处理，"
+echo "此预检仅验证目标路径和 Java 文件存在性。"
 echo ""
 echo "============================================"
 echo " Pre-hook: 通过"

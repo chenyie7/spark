@@ -6,11 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个 Java 后端开发规范仓库，用于约束 AI 代码生成行为。规范的目标技术栈为 Spring Boot 3 + Spring Cloud 微服务。
 
-包含四个阶段的 Agent：
+包含三个阶段的 Agent：
 1. **pm/** — 需求沟通：和用户对话澄清需求，产出 spec 设计文档和 plan 实现计划
 2. **coder/** — 架构约束：按规范写 Java 代码
-3. **reviewer/check_system/** — 双层校验：fuck-u-code MCP 静态分析 + AI 统一审查，防止规范遗漏
-4. **reviewer/** — 代码审计：多维度审查 AI 生成的代码
+3. **reviewer/** — 代码审计：双层校验（fuck-u-code MCP 静态分析 + AI 统一审查），防止规范遗漏
 
 ## 如何使用
 
@@ -61,10 +60,7 @@ agents/
 ├── reviewer/                   # 代码审计
 │   ├── README.md               # 审查入口，按流程执行
 │   ├── review.skill.md          # /review 斜杠命令定义
-│   ├── structure-check.md      # 结构审查（包结构、分层调用、命名、注入）
-│   ├── quality-check.md        # 质量审查（异常、日志、Result、数据库、校验）
-│   ├── auth-check.md           # 认证审查（StpKit、登录、拦截器、权限）
-│   ├── infra-check.md          # 基础设施审查（Swagger、配置、Redis、国际化）
+│   ├── hooks/                  # 审查钩子
 │   └── check_system/           # 双层校验系统（Python CLI）
 │       ├── code_check/         # Python 包
 │       │   ├── cli.py          # CLI 入口 — report 命令
@@ -75,7 +71,13 @@ agents/
 │           └── ai-checklist.yaml    # AI 检查清单
 └── scheduler/                   # 调度器
     ├── build.skill.md           # /build 斜杠命令定义
-    └── pipeline.yaml            # Coder-Reviewer 流水线 DAG 配置
+    ├── pipeline.yaml            # Coder-Reviewer 流水线 DAG 配置
+    └── pipeline_engine/         # 流水线执行引擎（Python）
+        ├── cli.py               # CLI 入口
+        ├── engine.py            # 流水线运行时引擎
+        ├── config.py            # 配置加载
+        ├── models.py            # 数据模型
+        └── reporter.py          # 报告输出
 ```
 
 ## 全局规则速查

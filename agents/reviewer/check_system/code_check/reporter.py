@@ -6,8 +6,13 @@ from typing import Any
 
 
 def _file_short(full_path: str) -> str:
-    """Strip the common prefix to get a short relative path."""
-    return Path(full_path).name if "/" in full_path else full_path
+    """Return the package-relative path (everything after src/main/java/),
+    falling back to the bare filename if the marker is not found."""
+    marker = "src/main/java/"
+    idx = full_path.find(marker)
+    if idx != -1:
+        return full_path[idx + len(marker):]
+    return Path(full_path).name
 
 
 def render(quality: dict | None, findings: dict) -> str:

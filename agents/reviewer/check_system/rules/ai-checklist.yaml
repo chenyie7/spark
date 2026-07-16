@@ -204,11 +204,6 @@ BE-CS-01:
   level: P0
   check: "检查 dto/ 目录下所有 DTO 类是否标注了 @NoArgsConstructor。Jackson 反序列化 @RequestBody 时需要无参构造器，缺少会导致 400 错误。使用 @Data 的类会自动生成 getter/setter 但不会生成无参构造（如果只有 @AllArgsConstructor）"
 
-BE-CS-02:
-  description: "常量类是否 final + 私有构造"
-  level: P2
-  check: "同 BE-QL-38，检查常量类是否 final 且构造器私有。常量类禁止实例化"
-
 BE-CS-03:
   description: "是否使用了禁止的 Lombok 注解 @SneakyThrows/@Cleanup/@Synchronized"
   level: P1

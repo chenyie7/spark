@@ -11,7 +11,6 @@ description: "标准 coder → reviewer 代码生成流水线，含 P0 修复循
 defaults:
   timeout: 600s          # 单节点默认超时（秒）
   max_retries: 3         # reviewer → coder 最大循环轮次
-  block_on: [P0]         # 触发回退的严重级别列表
   base_path: "."         # 项目存放位置，默认当前目录
   project_name: ""       # 项目名称，空则需要交互输入
   mode: acceptEdits
@@ -50,7 +49,6 @@ nodes:
     outputs:
       - output_dir: "{output_dir}/src/main/java"
     timeout: 900s
-    depends_on: []          # 起始节点，无依赖
 
   - id: reviewer
     type: agent
@@ -74,8 +72,6 @@ nodes:
          - 对照 spec 设计文档，验证代码业务逻辑是否符合需求设计
          - 逐条对照 ai-checklist 检查规范合规 → spec_violations[]
          - 对 quality.json 标红的高分文件做深度分析 → quality_issues[]
-         - 逐条对照 ai-checklist 检查规范合规 → spec_violations[]
-         - 对 quality.json 标红的高分文件做深度分析 → quality_issues[]
 
       3. 按固定 JSON schema 输出 findings.json，写入 review-output/{run_id}/findings.json
          判定 review_status: P0>0 → FAILED, 否则 PASSED
@@ -86,11 +82,10 @@ nodes:
     inputs:
       - coder_output: "${coder.outputs.output_dir}"
     outputs:
-      - pre_check: "review-output/{run_id}/pre-check-result.json"
-      - ai_review: "review-output/{run_id}/review-result.json"
+      - quality: "review-output/{run_id}/quality.json"
+      - findings: "review-output/{run_id}/findings.json"
       - final_report: "review-output/{run_id}/final-review-report.md"
     timeout: 600s
-    depends_on: [coder]     # 依赖 coder 产出
 
 # ── DAG 边 ──
 # 调度 Agent 按以下规则决定流转：

@@ -24,10 +24,10 @@ def load_json(path: Path) -> dict:
 def cmd_report(args):
     """Merge quality.json + findings.json → final-report.md."""
     quality_path = Path(args.quality)
-    findings_path = Path(args.findings)
+    findings_path = Path(args.findings) if args.findings else None
     output_path = Path(args.output)
 
-    if not findings_path.exists():
+    if findings_path and not findings_path.exists():
         print(f"Error: findings.json not found: {findings_path}", file=sys.stderr)
         sys.exit(1)
 
@@ -35,11 +35,11 @@ def cmd_report(args):
         print(f"Warning: quality.json not found: {quality_path} — quality overview will be skipped", file=sys.stderr)
 
     quality = load_json(quality_path) if quality_path.exists() else None
-    findings = load_json(findings_path)
+    findings = load_json(findings_path) if findings_path else {"review_status": "UNKNOWN", "spec_violations": [], "quality_issues": []}
 
     if not findings:
-        print("Error: findings.json is empty or invalid", file=sys.stderr)
-        sys.exit(1)
+        print("Warning: findings.json is empty, using defaults", file=sys.stderr)
+        findings = {"review_status": "UNKNOWN", "spec_violations": [], "quality_issues": []}
 
     generate_report(quality, findings, output_path)
     print(f"Final report -> {output_path}")
@@ -52,7 +52,7 @@ def main():
     # report — the only command after refactor
     p_report = sub.add_parser("report", help="Generate final Markdown report")
     p_report.add_argument("--quality", required=True, help="quality.json from fuck-u-code analyze")
-    p_report.add_argument("--findings", required=True, help="findings.json from AI unified review")
+    p_report.add_argument("--findings", default=None, help="findings.json from AI unified review (optional)")
     p_report.add_argument("--output", required=True, help="Output Markdown path")
 
     args = parser.parse_args()

@@ -243,4 +243,4 @@ public class RuleService {
 |------|---------|
 | `../architecture/microservice-architecture-guide.md` | 微服务项目结构，common-config 模块 |
 | `logging-guide.md` | 日志级别环境配置 |
-| `../layered/service-guide.md` | Nacos 热刷新 @RefreshScope 使用 |
+| `../layered/service-guide.md` | Service 层事务管理、DTO 转换、上下文获取 |
